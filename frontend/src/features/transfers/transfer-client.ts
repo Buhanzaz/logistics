@@ -1,5 +1,5 @@
 import { fetchApi, readApiResponse } from '../../api/http-response';
-import { requireSimulatorAccessToken, simulatorApiUrl } from '../../api/client';
+import { simulatorApiUrl } from '../../api/client';
 import { createContractorDriver } from '../contractors/contractor-client';
 
 /** One selectable value from the canonical RWMS cabin catalog. */
@@ -65,7 +65,6 @@ export interface TransferDriver {
 
 /** Reusable contractor profile command owned by task-board. */
 export interface CreateTransferContractorInput {
-  accessToken: string;
   warehouseId: string;
   contractorId: string;
   displayName: string;
@@ -123,9 +122,8 @@ export interface ReturnCapitalRepairLine {
   assetVersion: number;
 }
 
-/** Authenticated, idempotent command for one exact canonical transfer-draft intention. */
+/** Idempotent command for one exact canonical transfer-draft intention. */
 export interface CreateTransferDraftInput {
-  accessToken: string;
   idempotencyKey: string;
   warehouseId: string;
   destinationWarehouseId: string;
@@ -193,8 +191,8 @@ function furnitureItem(value: unknown, warehouseId: string): TransferFurnitureCa
 }
 
 /** Loads cabin characteristics and furniture balances from canonical asset-service APIs. */
-export async function loadTransferCargoCatalog(accessToken: string, warehouseId: string): Promise<TransferCargoCatalog> {
-  const headers = { Accept: 'application/json, application/problem+json', Authorization: `Bearer ${accessToken}` };
+export async function loadTransferCargoCatalog(warehouseId: string): Promise<TransferCargoCatalog> {
+  const headers = { Accept: 'application/json, application/problem+json' };
   const query = `warehouseId=${encodeURIComponent(warehouseId)}`;
   const [optionsResponse, equipmentResponse] = await Promise.all([
     fetch(`/api/asset/v1/rental-items/creation-options?${query}`, { headers }),
@@ -222,12 +220,10 @@ export async function loadTransferCargoCatalog(accessToken: string, warehouseId:
 
 /** Loads active source-warehouse vehicles without refreshing canonical RWMS identities. */
 export async function loadTransferRouteVehicles(localWarehouseId: string, planningDate: string): Promise<TransferRouteVehicle[]> {
-  const accessToken = await requireSimulatorAccessToken();
   const query = new URLSearchParams({ planning_date: planningDate, request_limit: '1' });
   const response = await fetchApi(simulatorApiUrl(`/warehouses/${encodeURIComponent(localWarehouseId)}/workspace?${query.toString()}`), {
     headers: {
       Accept: 'application/json, application/problem+json',
-      Authorization: `Bearer ${accessToken}`,
     },
   });
   const value = await readApiResponse(response, 'Не удалось получить автомобили склада');
@@ -255,11 +251,9 @@ export async function loadTransferRouteVehicles(localWarehouseId: string, planni
 
 /** Loads source-qualified canonical drivers without creating a simulator-owned employee. */
 export async function loadTransferDrivers(localWarehouseId: string): Promise<TransferDriver[]> {
-  const accessToken = await requireSimulatorAccessToken();
   const response = await fetchApi(simulatorApiUrl(`/warehouses/${encodeURIComponent(localWarehouseId)}/available-drivers`), {
     headers: {
       Accept: 'application/json, application/problem+json',
-      Authorization: `Bearer ${accessToken}`,
     },
   });
   const value = await readApiResponse(response, 'Не удалось получить водителей склада');
@@ -273,7 +267,6 @@ export async function loadTransferDrivers(localWarehouseId: string): Promise<Tra
 /** Creates an explicit contractor profile without provisioning an employee login or schedule. */
 export async function createTransferContractor(input: CreateTransferContractorInput): Promise<TransferDriver> {
   const contractor = await createContractorDriver(
-    input.accessToken,
     input.warehouseId,
     {
       displayName: input.displayName,
@@ -288,9 +281,9 @@ export async function createTransferContractor(input: CreateTransferContractorIn
 }
 
 /** Loads destination cabins currently awaiting capital repair for a return leg. */
-export async function loadCapitalRepairCards(accessToken: string, destinationWarehouseId: string): Promise<CapitalRepairCard[]> {
+export async function loadCapitalRepairCards(destinationWarehouseId: string): Promise<CapitalRepairCard[]> {
   const response = await fetchApi(`/api/logistics/v1/driver-board?warehouseId=${encodeURIComponent(destinationWarehouseId)}`, {
-    headers: { Accept: 'application/json, application/problem+json', Authorization: `Bearer ${accessToken}` },
+    headers: { Accept: 'application/json, application/problem+json' },
   });
   const value = await readApiResponse(response, 'Не удалось получить бытовки на капремонт');
   const cards = isRecord(value) && Array.isArray(value.capitalRepairs) ? value.capitalRepairs : [];
@@ -315,12 +308,10 @@ export async function estimateTransferArrival(input: {
   vehicleId: string;
   cabinCount: number;
 }): Promise<TransferArrivalEstimate> {
-  const accessToken = await requireSimulatorAccessToken();
   const response = await fetchApi(simulatorApiUrl('/routing/transfer-arrival-estimate'), {
     method: 'POST',
     headers: {
       Accept: 'application/json, application/problem+json',
-      Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -355,7 +346,6 @@ export async function createTransferDraft(input: CreateTransferDraftInput): Prom
     method: 'POST',
     headers: {
       Accept: 'application/json, application/problem+json',
-      Authorization: `Bearer ${input.accessToken}`,
       'Content-Type': 'application/json',
       'Idempotency-Key': input.idempotencyKey,
     },

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { setSimulatorAccessTokenProvider } from '../src/api/client';
 import {
   createTransferContractor,
   createTransferDraft,
@@ -18,7 +17,6 @@ describe('canonical transfer client', () => {
     }));
     vi.stubGlobal('fetch', fetchMock);
     await createTransferDraft({
-      accessToken: 'panel-token',
       idempotencyKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       warehouseId: '11111111-1111-4111-8111-111111111111',
       destinationWarehouseId: '22222222-2222-4222-8222-222222222222',
@@ -45,7 +43,7 @@ describe('canonical transfer client', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/logistics/v1/transfers');
     expect(new Headers(init.headers)).toMatchObject(expect.any(Headers));
-    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer panel-token');
+    expect(new Headers(init.headers).has('Authorization')).toBe(false);
     expect(new Headers(init.headers).get('Idempotency-Key')).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     expect(JSON.parse(typeof init.body === 'string' ? init.body : '')).toEqual({
       warehouseId: '11111111-1111-4111-8111-111111111111',
@@ -93,7 +91,7 @@ describe('canonical transfer client', () => {
       ]), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const catalog = await loadTransferCargoCatalog('panel-token', 'warehouse-1');
+    const catalog = await loadTransferCargoCatalog('warehouse-1');
 
     expect(catalog.rentalTypes).toEqual([{ id: 'type-1', name: 'BK2' }]);
     expect(catalog.furniture).toEqual([{ id: 'bed-1', name: 'Кровать', availableStock: 18, reservedQuantity: 2 }]);
@@ -101,7 +99,7 @@ describe('canonical transfer client', () => {
       '/api/asset/v1/rental-items/creation-options?warehouseId=warehouse-1',
       '/api/asset/v1/equipment?warehouseId=warehouse-1',
     ]);
-    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get('Authorization')).toBe('Bearer panel-token');
+    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).has('Authorization')).toBe(false);
   });
 
   it('loads active local vehicles and asks backend for an exact transfer arrival', async () => {
@@ -142,10 +140,10 @@ describe('canonical transfer client', () => {
     expect(arrival.estimated_arrival_at).toBe('2026-08-30T09:20:00Z');
     const [, vehiclesInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/warehouses/local-spb/workspace?planning_date=2026-08-30&request_limit=1');
-    expect(new Headers(vehiclesInit.headers).get('Authorization')).toBe('Bearer test-user-access-token');
+    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).has('Authorization')).toBe(false);
     const [estimateUrl, estimateInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(estimateUrl).toBe('/api/routing/transfer-arrival-estimate');
-    expect(new Headers(estimateInit.headers).get('Authorization')).toBe('Bearer test-user-access-token');
+    expect(new Headers(estimateInit.headers).has('Authorization')).toBe(false);
     expect(JSON.parse(estimateInit.body as string)).toEqual({
       source_warehouse_id: 'spb',
       destination_warehouse_id: 'novgorod',
@@ -165,29 +163,7 @@ describe('canonical transfer client', () => {
       { workerId: 'worker-1', displayName: 'Петров Алексей' },
     ]);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/warehouses/local-spb/available-drivers');
-    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get('Authorization')).toBe('Bearer test-user-access-token');
-  });
-
-  it.each([
-    ['автомобилей', () => loadTransferRouteVehicles('local-spb', '2026-08-30')],
-    ['водителей', () => loadTransferDrivers('local-spb')],
-    ['расчёта прибытия', () => estimateTransferArrival({
-      sourceWarehouseId: 'spb',
-      destinationWarehouseId: 'novgorod',
-      plannedDepartureAt: '2026-08-30T05:30:00Z',
-      vehicleId: 'vehicle-1',
-      cabinCount: 2,
-    })],
-  ])('does not request simulator %s without a panel session', async (_name, request) => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    setSimulatorAccessTokenProvider(() => Promise.resolve(null));
-
-    await expect(request()).rejects.toMatchObject({
-      status: 401,
-      code: 'AUTHENTICATION_REQUIRED',
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).has('Authorization')).toBe(false);
   });
 
   it('creates a contractor through the public task-board boundary', async () => {
@@ -198,7 +174,6 @@ describe('canonical transfer client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(createTransferContractor({
-      accessToken: 'panel-token',
       warehouseId: 'warehouse-1',
       contractorId: 'contractor-1',
       displayName: 'Иванов Илья',
@@ -208,7 +183,7 @@ describe('canonical transfer client', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/task-board/warehouses/warehouse-1/logistics-drivers/contractors');
-    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer panel-token');
+    expect(new Headers(init.headers).has('Authorization')).toBe(false);
     expect(JSON.parse(init.body as string)).toEqual({
       contractorId: 'contractor-1',
       displayName: 'Иванов Илья',
@@ -236,7 +211,7 @@ describe('canonical transfer client', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    expect(await loadCapitalRepairCards('panel-token', 'warehouse-2')).toEqual([{
+    expect(await loadCapitalRepairCards('warehouse-2')).toEqual([{
       repairId: 'repair-1',
       assetId: 'cabin-172',
       assetVersion: 8,
@@ -249,7 +224,6 @@ describe('canonical transfer client', () => {
       {
         headers: {
           Accept: 'application/json, application/problem+json',
-          Authorization: 'Bearer panel-token',
         },
       },
     );

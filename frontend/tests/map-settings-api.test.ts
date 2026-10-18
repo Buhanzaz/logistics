@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getMapSettings } from '../src/api/map-settings';
-import { setSimulatorAccessTokenProvider } from '../src/api/client';
 
 describe('global logistics map configuration', () => {
-  it('uses the operator API with a fresh Bearer token and no cached credentials', async () => {
+  it('uses the operator API without authorization', async () => {
     const settings = { version: 2, provider: 'YANDEX', yandex_api_key: 'browser-test-key' };
     const fetch = vi.fn().mockResolvedValue(Response.json(settings));
     vi.stubGlobal('fetch', fetch);
@@ -12,12 +11,9 @@ describe('global logistics map configuration', () => {
       '/api/map-settings',
       expect.objectContaining({
         cache: 'no-store',
-        headers: { Authorization: 'Bearer test-user-access-token' },
       }),
     );
-    setSimulatorAccessTokenProvider(() => Promise.resolve(null));
-    await expect(getMapSettings()).rejects.toMatchObject({ status: 401 });
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(new Headers((fetch.mock.calls[0]?.[1] as RequestInit)?.headers).has('Authorization')).toBe(false);
   });
 
   it.each([

@@ -16,7 +16,6 @@ from app.config import get_settings
 from app.db import engine
 from app.errors import ApiError, api_error_handler
 from app.integrations.rwms import get_rwms_planning_client
-from app.security import AccessTokenVerifier, JwksAccessTokenVerifier
 from app.services.capacity_publication_worker import run_capacity_publication_worker
 from app.services.contractor_handoff_worker import run_contractor_handoff_worker
 from app.services.demand_ingestion_worker import run_demand_ingestion_worker
@@ -122,9 +121,15 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
 
 def create_app(
     planner_facade: PlannerFacade | None = None,
-    access_token_verifier: AccessTokenVerifier | None = None,
+    *args: object,
+    **kwargs: object,
 ) -> FastAPI:
-    """Create an application with an injectable planner integration boundary."""
+    """Create an application with an injectable planner integration boundary.
+
+    Extra positional/keyword arguments (e.g. legacy ``access_token_verifier``)
+    are accepted for backwards compatibility with tests and ignored now that
+    authentication is disabled.
+    """
 
     settings = get_settings()
     application = FastAPI(
@@ -137,9 +142,6 @@ def create_app(
         lifespan=lifespan,
     )
     application.state.planner_facade = planner_facade or UnavailablePlannerFacade()
-    application.state.access_token_verifier = (
-        access_token_verifier or JwksAccessTokenVerifier(settings)
-    )
     application.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
     application.add_exception_handler(IntegrityError, integrity_error_handler)  # type: ignore[arg-type]
     application.add_middleware(

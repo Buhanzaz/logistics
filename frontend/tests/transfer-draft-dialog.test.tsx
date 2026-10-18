@@ -19,7 +19,7 @@ const auth = vi.hoisted(() => ({
 const transfers = vi.hoisted(() => ({
   createTransferContractor: vi.fn(),
   createTransferDraft: vi.fn<(input: CreateTransferDraftInput) => Promise<CreatedTransferDraft>>(),
-  loadTransferCargoCatalog: vi.fn<(accessToken: string, warehouseId: string) => Promise<TransferCargoCatalog>>(),
+  loadTransferCargoCatalog: vi.fn<(warehouseId: string) => Promise<TransferCargoCatalog>>(),
   loadTransferRouteVehicles: vi.fn<(warehouseId: string, planningDate: string) => Promise<TransferRouteVehicle[]>>(),
   loadTransferDrivers: vi.fn<(warehouseId: string) => Promise<TransferDriver[]>>(),
   estimateTransferArrival: vi.fn<(input: {
@@ -176,19 +176,12 @@ describe('standalone transfer draft dialog', () => {
     }));
   });
 
-  it('stays inside logistics and offers the shared RWMS login when no USER session exists', async () => {
-    auth.restorePanelUser.mockResolvedValue(null);
-    auth.beginPanelLogin.mockResolvedValue(undefined);
-    window.history.replaceState(null, '', '/logistics-panel/?day=2026-08-30');
-    const user = userEvent.setup();
+  it('renders the transfer form without requiring RWMS login', async () => {
     renderDialog();
 
     expect(screen.getByRole('dialog', { name: 'Создать перемещение' })).toBeVisible();
-    expect(await screen.findByText('Нужен вход в RWMS')).toBeVisible();
-    expect(screen.queryByRole('link', { name: 'Создать перемещение' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Войти в RWMS' }));
-
-    expect(auth.beginPanelLogin).toHaveBeenCalledWith('/logistics-panel/?day=2026-08-30');
+    expect(await screen.findByLabelText('Склад отправления')).toBeVisible();
+    expect(screen.queryByText('Нужен вход в RWMS')).not.toBeInTheDocument();
   });
 
   it('creates an empty transfer with exact calculated arrival and keeps unavailable warehouses visible', async () => {
@@ -209,7 +202,6 @@ describe('standalone transfer draft dialog', () => {
     const submitted = transfers.createTransferDraft.mock.calls[0]![0];
     expect(submitted.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
     expect(submitted).toEqual({
-      accessToken: 'panel-token',
       idempotencyKey: submitted.idempotencyKey,
       warehouseId: SPB_ID,
       destinationWarehouseId: NOVGOROD_ID,
@@ -273,7 +265,7 @@ describe('standalone transfer draft dialog', () => {
     expect(within(dialog).queryByLabelText('Бытовка 1')).not.toBeInTheDocument();
     await user.click(await within(dialog).findByLabelText('Перевозить бытовки'));
     const cabin = await within(dialog).findByLabelText('Бытовка 1');
-    expect(transfers.loadTransferCargoCatalog).toHaveBeenCalledWith('panel-token', SPB_ID);
+    expect(transfers.loadTransferCargoCatalog).toHaveBeenCalledWith(SPB_ID);
     await user.selectOptions(within(cabin).getByLabelText('Тип бытовки 1'), TYPE_ID);
     await user.selectOptions(within(cabin).getByLabelText('Исполнение бытовки 1'), DIMENSION_ID);
     await user.selectOptions(within(cabin).getByLabelText('Отделка бытовки 1'), FINISHING_ID);
@@ -331,7 +323,7 @@ describe('standalone transfer draft dialog', () => {
     await waitFor(() => expect(within(dialog).getByLabelText('Водитель рейса')).toBeEnabled());
     await user.selectOptions(within(dialog).getByLabelText('Водитель рейса'), DRIVER_ID);
     await user.click(within(dialog).getByLabelText('Переместить водителя на склад назначения'));
-    await selectCalendarDate(dialog, 'Назначение действует по', /^четверг, 3 сентября 2026 г\.$/u, user);
+    await selectCalendarDate(dialog, 'Назначение действует по', /^суббота, 3 октября 2026 г\.$/u, user);
     await setDeparture(dialog, user);
     await user.click(within(dialog).getByRole('button', { name: 'Создать черновик' }));
 
@@ -341,7 +333,7 @@ describe('standalone transfer draft dialog', () => {
     expect(submitted.driverReposition).toEqual({
       resourceId: DRIVER_ID,
       mode: 'TEMPORARY',
-      until: '2026-09-03T20:59:00.000Z',
+      until: '2026-10-03T20:59:00.000Z',
     });
   });
 
@@ -360,7 +352,6 @@ describe('standalone transfer draft dialog', () => {
 
     await waitFor(() => expect(transfers.createTransferContractor).toHaveBeenCalledOnce());
     expect(transfers.createTransferContractor.mock.calls[0]![0]).toEqual(expect.objectContaining({
-      accessToken: 'panel-token',
       warehouseId: SPB_ID,
       displayName: 'Иванов Илья',
       phone: '+79990001122',
@@ -385,7 +376,7 @@ describe('standalone transfer draft dialog', () => {
     await user.selectOptions(within(outbound).getByLabelText('Исполнение бытовки 1'), DIMENSION_ID);
     await user.selectOptions(within(outbound).getByLabelText('Отделка бытовки 1'), FINISHING_ID);
     fireEvent.change(within(outbound).getByLabelText('Количество бытовок 1'), { target: { value: '2' } });
-    await waitFor(() => expect(transfers.loadCapitalRepairCards).toHaveBeenCalledWith('panel-token', NOVGOROD_ID));
+    await waitFor(() => expect(transfers.loadCapitalRepairCards).toHaveBeenCalledWith(NOVGOROD_ID));
     await user.click(within(dialog).getByLabelText('Забрать бытовки на капремонт обратным рейсом'));
     await user.click(within(dialog).getByText(/ВН-172/).closest('label')!.querySelector('input')!);
     await user.click(within(dialog).getByText(/ВН-311/).closest('label')!.querySelector('input')!);

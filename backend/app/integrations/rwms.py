@@ -1,18 +1,16 @@
-"""Authenticated HTTP adapter for the RWMS logistics planning boundary."""
+"""HTTP adapter for the RWMS logistics planning boundary without authentication."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
-from time import monotonic
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
 from app.errors import ApiError
@@ -39,19 +37,8 @@ from app.schemas.operations import (
     RwmsRescheduleResult,
 )
 
-RWMS_PLANNING_SCOPE = "logistics.planning"
 _UPSTREAM_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,95}$")
 logger = logging.getLogger(__name__)
-
-
-class _TokenResponse(BaseModel):
-    """Minimal OAuth client-credentials response retained only in memory."""
-
-    model_config = ConfigDict(extra="ignore", hide_input_in_errors=True)
-
-    access_token: str = Field(min_length=1)
-    token_type: str = "Bearer"
-    expires_in: float = Field(gt=0)
 
 
 def _safe_validation_diagnostics(error: ValidationError) -> dict[str, object]:
@@ -79,7 +66,7 @@ def _invalid_upstream_response(code: str, detail: str, error: ValueError) -> Api
 
 
 class RwmsPlanningClient:
-    """Fetch RWMS planning inputs and submit versioned assignments with OAuth2."""
+    """Fetch RWMS planning inputs and submit versioned assignments without authentication."""
 
     def __init__(
         self,
@@ -90,14 +77,8 @@ class RwmsPlanningClient:
         self._enabled = settings.rwms_sync_enabled
         self._capacity_publish_enabled = settings.rwms_capacity_publish_enabled
         self._base_url = settings.rwms_logistics_base_url
-        self._token_url = settings.rwms_token_url
-        self._client_id = settings.rwms_client_id
-        self._client_secret = settings.rwms_client_secret
         self._timeout = settings.rwms_timeout_seconds
         self._transport = transport
-        self._access_token: str | None = None
-        self._token_expires_at = 0.0
-        self._token_lock = asyncio.Lock()
 
     def ensure_enabled(self) -> None:
         """Fail explicitly when the integration was not enabled by configuration."""
@@ -130,7 +111,7 @@ class RwmsPlanningClient:
         """Read a warehouse/date-bounded planning feed from logistics-service."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             "/api/internal/logistics/v1/planning/requests",
             params={
@@ -145,7 +126,7 @@ class RwmsPlanningClient:
         """Read canonical warehouse identities available to the planning client."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET", "/api/internal/logistics/v1/planning/warehouses"
         )
         warehouses = self._validate_response_list(
@@ -172,7 +153,7 @@ class RwmsPlanningClient:
         if at.utcoffset() is None:
             raise ValueError("at must include a UTC offset")
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             (f"/api/internal/logistics/v1/planning/warehouses/{served_warehouse_id}/support-links"),
             params={"at": at.isoformat()},
@@ -203,7 +184,7 @@ class RwmsPlanningClient:
         """Read active directed support edges adjacent to one canonical warehouse."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             (f"/api/internal/logistics/v1/planning/warehouses/{warehouse_id}/support-network"),
         )
@@ -252,7 +233,7 @@ class RwmsPlanningClient:
         }
         if at is not None:
             params["at"] = at.isoformat()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             "/api/internal/logistics/v1/planning/drivers",
             params=params,
@@ -284,7 +265,7 @@ class RwmsPlanningClient:
         if window_start >= window_end:
             raise ValueError("vehicle assignment windowStart must precede windowEnd")
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             "/api/internal/logistics/v1/planning/vehicle-assignments",
             params={
@@ -318,7 +299,7 @@ class RwmsPlanningClient:
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             "/api/internal/logistics/v1/planning/base-tasks",
             params={
@@ -351,7 +332,7 @@ class RwmsPlanningClient:
         if expected_order_version < 0:
             raise ValueError("expected_order_version must be non-negative")
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             f"/api/internal/logistics/v1/planning/orders/{order_id}/reschedule-options",
             params={"expectedOrderVersion": str(expected_order_version)},
@@ -379,7 +360,7 @@ class RwmsPlanningClient:
         """Apply one customer-agreed date through the authoritative order owner."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "POST",
             f"/api/internal/logistics/v1/planning/orders/{order_id}/reschedule",
             headers={"Idempotency-Key": idempotency_key},
@@ -442,7 +423,7 @@ class RwmsPlanningClient:
         """Submit assignments while preserving every applied and rejected outcome."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "POST",
             "/api/internal/logistics/v1/planning/assignments",
             headers={"Idempotency-Key": idempotency_key},
@@ -460,7 +441,7 @@ class RwmsPlanningClient:
         """Atomically replace one complete still-unstarted published plan revision."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "PUT",
             f"/api/internal/logistics/v1/planning/assignments/{source_plan_id}",
             headers={"Idempotency-Key": str(idempotency_key)},
@@ -497,7 +478,7 @@ class RwmsPlanningClient:
         """Withdraw one owner-cancelled member through the durable published-plan saga."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "POST",
             (
                 "/api/internal/logistics/v1/planning/assignments/"
@@ -534,7 +515,7 @@ class RwmsPlanningClient:
         """Read current RWMS ownership for shipment parts on one warehouse-local date."""
 
         self.ensure_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "GET",
             "/api/internal/logistics/v1/planning/assignments",
             params={"warehouseId": str(warehouse_id), "date": str(date)},
@@ -555,7 +536,7 @@ class RwmsPlanningClient:
         """Replace one warehouse's active anonymous capacity projection idempotently."""
 
         self.ensure_capacity_publish_enabled()
-        response = await self._authorized_request(
+        response = await self._request(
             "PUT",
             f"/api/internal/logistics/v1/planning/capacity-snapshots/{warehouse_id}",
             headers={"Idempotency-Key": str(idempotency_key)},
@@ -567,7 +548,7 @@ class RwmsPlanningClient:
             "RWMS_CAPACITY_RESPONSE_INVALID",
         )
 
-    async def _authorized_request(
+    async def _request(
         self,
         method: str,
         path: str,
@@ -576,12 +557,10 @@ class RwmsPlanningClient:
         headers: Mapping[str, str] | None = None,
         json_body: object | None = None,
     ) -> httpx.Response:
-        """Execute one bounded Bearer request without exposing token material in errors."""
+        """Execute one bounded request without authentication."""
 
-        token = await self._get_access_token()
         assert self._base_url is not None
         request_headers = dict(headers or {})
-        request_headers["Authorization"] = f"Bearer {token}"
         try:
             async with httpx.AsyncClient(
                 transport=self._transport,
@@ -636,70 +615,12 @@ class RwmsPlanningClient:
             return None
         return candidate
 
-    async def _get_access_token(self) -> str:
-        """Return a cached token, refreshing it before its expiry margin."""
-
-        self.ensure_enabled()
-        now = monotonic()
-        if self._access_token is not None and now < self._token_expires_at:
-            return self._access_token
-        async with self._token_lock:
-            now = monotonic()
-            if self._access_token is not None and now < self._token_expires_at:
-                return self._access_token
-            token = await self._request_access_token()
-            margin = min(30.0, max(1.0, token.expires_in * 0.1))
-            self._access_token = token.access_token
-            self._token_expires_at = monotonic() + max(0.0, token.expires_in - margin)
-            return token.access_token
-
-    async def _request_access_token(self) -> _TokenResponse:
-        """Request the fixed planning scope using the registered Basic client authentication."""
-
-        assert self._token_url is not None
-        assert self._client_secret is not None
-        try:
-            async with httpx.AsyncClient(
-                transport=self._transport,
-                timeout=self._timeout,
-                follow_redirects=False,
-            ) as client:
-                response = await client.post(
-                    self._token_url,
-                    auth=httpx.BasicAuth(self._client_id, self._client_secret),
-                    data={
-                        "grant_type": "client_credentials",
-                        "scope": RWMS_PLANNING_SCOPE,
-                    },
-                )
-        except httpx.RequestError as exc:
-            raise ApiError(
-                502,
-                "RWMS_TOKEN_REQUEST_FAILED",
-                "RWMS OAuth token endpoint could not be reached",
-            ) from exc
-        if response.is_error:
-            raise ApiError(
-                502,
-                "RWMS_TOKEN_REQUEST_FAILED",
-                "RWMS OAuth token endpoint rejected the request",
-                extra={"upstream_status": response.status_code},
-            )
-        try:
-            return _TokenResponse.model_validate(response.json())
-        except ValueError as exc:
-            raise _invalid_upstream_response(
-                "RWMS_TOKEN_RESPONSE_INVALID",
-                "RWMS OAuth token response is invalid",
-                exc,
-            ) from None
-
     @staticmethod
-    def _validate_response[ResponseModel: BaseModel](
+    def _validate_response(
         response: httpx.Response,
-        model: type[ResponseModel],
+        model: type[BaseModel],
         code: str,
-    ) -> ResponseModel:
+    ) -> BaseModel:
         """Validate upstream JSON instead of accepting partial or fabricated data."""
 
         try:
@@ -712,11 +633,11 @@ class RwmsPlanningClient:
             ) from None
 
     @staticmethod
-    def _validate_response_list[ResponseModel: BaseModel](
+    def _validate_response_list(
         response: httpx.Response,
-        model: type[ResponseModel],
+        model: type[BaseModel],
         code: str,
-    ) -> list[ResponseModel]:
+    ) -> list[BaseModel]:
         """Validate a strict upstream JSON array without accepting partial entries."""
 
         try:
@@ -737,34 +658,25 @@ def _cached_rwms_client(
     enabled: bool,
     capacity_publish_enabled: bool,
     base_url: str | None,
-    token_url: str | None,
-    client_id: str,
-    client_secret: str | None,
     timeout: float,
 ) -> RwmsPlanningClient:
-    """Retain the in-memory token cache for one immutable configuration tuple."""
+    """Retain the client for one immutable configuration tuple."""
 
     settings = Settings(
         rwms_sync_enabled=enabled,
         rwms_capacity_publish_enabled=capacity_publish_enabled,
         rwms_logistics_base_url=base_url,
-        rwms_token_url=token_url,
-        rwms_client_id=client_id,
-        rwms_client_secret=client_secret,
         rwms_timeout_seconds=timeout,
     )
     return RwmsPlanningClient(settings)
 
 
 def get_rwms_planning_client(settings: Settings) -> RwmsPlanningClient:
-    """Resolve the process-wide client and its bounded OAuth token cache."""
+    """Resolve the process-wide client."""
 
     return _cached_rwms_client(
         settings.rwms_sync_enabled,
         settings.rwms_capacity_publish_enabled,
         settings.rwms_logistics_base_url,
-        settings.rwms_token_url,
-        settings.rwms_client_id,
-        settings.rwms_client_secret,
         settings.rwms_timeout_seconds,
     )

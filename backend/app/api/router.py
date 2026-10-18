@@ -1,6 +1,6 @@
 """Composition root for the version-one public API router."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from app.api import (
     admin_catalog,
@@ -15,18 +15,16 @@ from app.api import (
     request_rescheduling,
     routing,
     rwms,
-    slot_planning,
-)
-from app.api.dependencies import get_current_admin, get_current_user
+    slot_planning)
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health.router)
-admin_router = APIRouter(prefix="/admin", dependencies=[Depends(get_current_admin)])
+admin_router = APIRouter(prefix="/admin")
 admin_router.include_router(admin_catalog.router)
 admin_router.include_router(admin_settings.router)
 admin_router.include_router(map_settings.admin_router)
 api_router.include_router(admin_router)
-protected_router = APIRouter(dependencies=[Depends(get_current_user)])
+protected_router = APIRouter()
 protected_router.include_router(catalog.router)
 protected_router.include_router(dynamic_operations.router)
 protected_router.include_router(policy_zones.router)

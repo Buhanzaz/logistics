@@ -35,15 +35,15 @@ describe('contractor route-share client', () => {
       externalTaskIds,
     };
 
-    await expect(createContractorRouteShare('user-token', warehouseId, input, handoffCommandId)).resolves.toEqual(response);
-    await expect(createContractorRouteShare('user-token', warehouseId, input, handoffCommandId)).resolves.toEqual(response);
+    await expect(createContractorRouteShare(warehouseId, input, handoffCommandId)).resolves.toEqual(response);
+    await expect(createContractorRouteShare(warehouseId, input, handoffCommandId)).resolves.toEqual(response);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const [url, init] of fetchMock.mock.calls) {
       expect(url).toBe(`/api/logistics/v1/warehouses/${warehouseId}/contractor-route-shares`);
       expect(init?.method).toBe('POST');
       const headers = new Headers(init?.headers);
-      expect(headers.get('Authorization')).toBe('Bearer user-token');
+      expect(headers.has('Authorization')).toBe(false);
       expect(headers.get('Idempotency-Key')).toBe(handoffCommandId);
       expect(headers.get('Content-Type')).toBe('application/json');
       if (typeof init?.body !== 'string') throw new Error('Expected a JSON route-share request');

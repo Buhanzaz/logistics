@@ -113,7 +113,7 @@ describe('application states', () => {
     expect(within(warehouseHome).getByText('BLOCKBOX')).toBeVisible();
     expect(within(warehouseHome).getByText('Логистика')).toBeVisible();
     expect(screen.queryByText('RWMS · Логистика')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Настройки' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Настройки' })).toBeVisible();
     expect(screen.queryByRole('combobox', { name: 'Текущий склад' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Добавить склад' })).not.toBeInTheDocument();
 

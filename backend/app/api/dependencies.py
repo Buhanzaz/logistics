@@ -3,8 +3,7 @@
 from collections.abc import AsyncIterator
 from typing import Annotated, cast
 
-from fastapi import Depends, Request, Security
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
@@ -14,58 +13,17 @@ from app.routing import (
     MockRoutingProvider,
     OsrmRoutingProvider,
     RoadSnapper,
-    ValhallaRoutingProvider,
-)
-from app.security import AccessTokenVerifier, CurrentUserPrincipal
+    ValhallaRoutingProvider)
 from app.services.plans import PlannerFacade
 
 # Commit write transactions before the response becomes observable. This keeps an
 # immediate client-side refetch from seeing a partially old workspace snapshot.
 SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
-_bearer = HTTPBearer(auto_error=False)
-
-
-def get_access_token_verifier(request: Request) -> AccessTokenVerifier:
-    """Resolve the process-wide JWT verifier from application state."""
-
-    return cast(AccessTokenVerifier, request.app.state.access_token_verifier)
-
-
-async def get_current_user(
-    settings: SettingsDep,
-    verifier: Annotated[AccessTokenVerifier, Depends(get_access_token_verifier)],
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(_bearer)],
-) -> CurrentUserPrincipal:
-    """Authenticate the exact panel USER and require baseline logistics read scope."""
-
-    claims = await verifier.verify(credentials.credentials if credentials is not None else None)
-    principal = CurrentUserPrincipal.from_claims(
-        claims,
-        panel_client_id=settings.auth_panel_client_id,
-    )
-    principal.require_scope("rwms.read")
-    return principal
-
-
-CurrentUserDep = Annotated[CurrentUserPrincipal, Depends(get_current_user)]
-
-
-async def get_current_admin(
-    verifier: Annotated[AccessTokenVerifier, Depends(get_access_token_verifier)],
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(_bearer)],
-) -> CurrentUserPrincipal:
-    """Authenticate the isolated RWMS administration application exactly."""
-
-    claims = await verifier.verify(credentials.credentials if credentials is not None else None)
-    return CurrentUserPrincipal.from_admin_claims(claims)
-
-
-CurrentAdminDep = Annotated[CurrentUserPrincipal, Depends(get_current_admin)]
 
 
 def get_capacity_rwms_client(settings: SettingsDep) -> RwmsPlanningClient:
-    """Resolve the shared authenticated client for optional capacity publication."""
+    """Resolve the shared client for optional capacity publication."""
 
     return get_rwms_planning_client(settings)
 
@@ -82,14 +40,12 @@ async def get_road_snapper(settings: SettingsDep) -> AsyncIterator[RoadSnapper]:
         provider = OsrmRoutingProvider(
             settings.osrm_base_url,
             profile=settings.osrm_profile,
-            timeout_seconds=settings.osrm_timeout_seconds,
-        )
+            timeout_seconds=settings.osrm_timeout_seconds)
     elif settings.routing_provider == "valhalla":
         provider = ValhallaRoutingProvider(
             settings.valhalla_url,
             timeout_seconds=settings.valhalla_timeout_seconds,
-            osm_data_version=settings.osm_data_version,
-        )
+            osm_data_version=settings.osm_data_version)
     else:
         raise RuntimeError(f"Unsupported routing provider {settings.routing_provider!r}")
     try:

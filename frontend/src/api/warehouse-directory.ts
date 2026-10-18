@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { requireSimulatorAccessToken } from './client';
 import { fetchApi, readApiResponse } from './http-response';
 
 const warehouseKindSchema = z.object({
@@ -19,11 +18,10 @@ export type WarehouseKindMetadata = z.infer<typeof warehouseKindSchema>;
 
 /** Canonical labels only: directory membership never grants planner access. */
 export async function loadWarehouseKinds(signal?: AbortSignal): Promise<ReadonlyMap<string, WarehouseKindMetadata>> {
-  const token = await requireSimulatorAccessToken();
   const response = await fetchApi('/api/warehouse/v1/warehouses', {
     signal: signal ?? null,
     cache: 'no-store',
-    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    headers: { Accept: 'application/json' },
   });
   const body = await readApiResponse(response, 'Не удалось загрузить типы складов. Повторите обновление.');
   const parsed = z.array(warehouseKindSchema).safeParse(body);

@@ -1,7 +1,6 @@
 import { Copy, ListChecks, Pencil, Plus, Route as RouteIcon, Sparkles, Trash2, UserRoundCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError, type ContractorDispatchMode, type ContractorDispatchResult } from '../../api/client';
-import { beginPanelLogin, restorePanelUser } from '../../auth/panel-oidc';
 import { Badge, Button, CheckboxField, EmptyState, Field, Modal, SelectField, Spinner } from '../../components/ui';
 import type { LogisticsRequest, UUID } from '../../domain/types';
 import { formatDate } from '../../utils/format';
@@ -24,8 +23,6 @@ import {
 } from './contractor-client';
 import { ContractorCompanyCard } from './ContractorCompanyCard';
 import { ContractorCompanyEditor } from './ContractorCompanyEditor';
-
-type Session = { status: 'loading' } | { status: 'anonymous' } | { status: 'ready'; token: string };
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const SHARE_LIFETIME_SAFETY_MS = 2 * 60 * 1_000;
@@ -53,10 +50,6 @@ interface ContractorRouteFeedback {
 interface ContractorRouteShareExpiry {
   expiresAt: string | null;
   reason: string | null;
-}
-
-function returnTo(): string {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
 function requestSummary(request: LogisticsRequest): string {
@@ -336,7 +329,6 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
   busy: boolean;
   onDispatch: (contractorWorkerId: UUID, mode: ContractorDispatchMode, requestIds: UUID[]) => Promise<ContractorDispatchResult | void>;
 }) {
-  const [session, setSession] = useState<Session>({ status: 'loading' });
   const [contractors, setContractors] = useState<ContractorDriver[]>([]);
   const [companies, setCompanies] = useState<ContractorCompany[]>([]);
   const [companyEditor, setCompanyEditor] = useState<ContractorCompany | null | undefined>(undefined);
@@ -359,21 +351,13 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
     setRouteFeedback({});
   }, [planningDate, warehouseId]);
 
-  useEffect(() => {
-    let current = true;
-    void restorePanelUser().then((user) => {
-      if (current) setSession(user ? { status: 'ready', token: user.access_token } : { status: 'anonymous' });
-    }).catch(() => { if (current) setSession({ status: 'anonymous' }); });
-    return () => { current = false; };
-  }, []);
-
-  const reload = useCallback(async (token: string) => {
+  const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [drivers, cityCompanies] = await Promise.all([
-        listContractorDrivers(token, warehouseId),
-        listContractorCompanies(token, warehouseId),
+        listContractorDrivers(warehouseId),
+        listContractorCompanies(warehouseId),
       ]);
       setContractors(drivers);
       setCompanies(cityCompanies);
@@ -387,13 +371,12 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
   }, [warehouseId]);
 
   useEffect(() => {
-    if (session.status === 'ready') void reload(session.token);
-    else if (session.status !== 'loading') setLoading(false);
-  }, [reload, session]);
+    void reload();
+  }, [reload]);
 
   const mutationError = async (caught: unknown) => {
-    if (caught instanceof ApiError && caught.status === 409 && session.status === 'ready') {
-      await reload(session.token);
+    if (caught instanceof ApiError && caught.status === 409) {
+      await reload();
       setError(`${userFacingErrorDetail(caught)} Закройте форму и откройте её заново, чтобы работать с актуальными данными.`);
     } else setError(userFacingErrorDetail(caught));
   };
@@ -406,42 +389,39 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
   };
 
   const saveCompany = async (input: ContractorCompanyInput) => {
-    if (session.status !== 'ready') return;
     setSaving(true);
     setError(null);
     try {
-      if (companyEditor) await updateContractorCompany(session.token, warehouseId, companyEditor, input);
-      else if (companyIntentId) await createContractorCompany(session.token, warehouseId, input, companyIntentId);
+      if (companyEditor) await updateContractorCompany( warehouseId, companyEditor, input);
+      else if (companyIntentId) await createContractorCompany( warehouseId, input, companyIntentId);
       else throw new Error('Закройте форму и повторите добавление компании.');
       setCompanyEditor(undefined);
       setCompanyIntentId(null);
-      await reload(session.token);
+      await reload();
     } catch (caught: unknown) { await mutationError(caught); }
     finally { setSaving(false); }
   };
 
   const removeCompany = async (company: ContractorCompany) => {
-    if (session.status !== 'ready') return;
     setSaving(true);
     setError(null);
     try {
-      await deleteContractorCompany(session.token, warehouseId, company);
+      await deleteContractorCompany( warehouseId, company);
       setCompanyEditor(undefined);
-      await reload(session.token);
+      await reload();
     } catch (caught: unknown) { await mutationError(caught); }
     finally { setSaving(false); }
   };
 
   const save = async (input: ContractorDriverInput) => {
-    if (session.status !== 'ready') return;
     setSaving(true);
     setError(null);
     try {
-      if (editor) await updateContractorDriver(session.token, warehouseId, editor, input);
-      else await createContractorDriver(session.token, warehouseId, input, createIntentId ?? crypto.randomUUID());
+      if (editor) await updateContractorDriver( warehouseId, editor, input);
+      else await createContractorDriver( warehouseId, input, createIntentId ?? crypto.randomUUID());
       setEditor(undefined);
       setCreateIntentId(null);
-      await reload(session.token);
+      await reload();
     } catch (caught: unknown) {
       await mutationError(caught);
     } finally {
@@ -450,13 +430,12 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
   };
 
   const remove = async (contractor: ContractorDriver) => {
-    if (session.status !== 'ready') return;
     setSaving(true);
     setError(null);
     try {
-      await deleteContractorDriver(session.token, warehouseId, contractor);
+      await deleteContractorDriver( warehouseId, contractor);
       setEditor(undefined);
-      await reload(session.token);
+      await reload();
     } catch (caught: unknown) {
       await mutationError(caught);
     } finally {
@@ -497,7 +476,6 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
     [planningDate, recentRoutes, routeRequests, routeRequestsComplete],
   );
   const copyRoute = async (route: ContractorRouteSummary) => {
-    if (session.status !== 'ready') return;
     if (
       !route.ready
       || !route.contractorWorkerId
@@ -526,10 +504,7 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
       return next;
     });
     try {
-      const currentUser = await restorePanelUser();
-      if (!currentUser) throw new Error('Сессия RWMS завершена. Войдите снова и повторите действие.');
       const share = await createContractorRouteShare(
-        currentUser.access_token,
         warehouseId,
         {
           contractorWorkerId: route.contractorWorkerId,
@@ -588,14 +563,12 @@ export function ContractorDriversPanel({ warehouseId, warehouseName = 'выбр�
       </article>
     );
   };
-  if (session.status === 'loading') return <Spinner label="Проверяем доступ…" />;
-  if (session.status === 'anonymous') return <EmptyState title="Нужен вход в RWMS" description="Каталог наёмных водителей хранится в общей учётной записи RWMS." action={<Button variant="primary" onClick={() => void beginPanelLogin(returnTo())}>Войти</Button>} />;
   return (
     <>
       <div className="contractor-catalog-header"><div><h2 className="section-title">Наёмные водители {warehouseName}</h2><p className="section-subtitle">Контакты компаний и самостоятельных водителей города</p></div><Button variant="primary" disabled={loading || saving || busy} onClick={() => openDriver(null)}><Plus size={14} />Добавить водителя</Button></div>
       <div className="contractor-planning-date"><span>Дата рейса</span><strong>{formatDate(planningDate)}</strong></div>
       {hasUnsupportedRwmsPickup ? <p className="field__hint" role="note">Вывоз RWMS пока нельзя передать наёмному водителю — для него нужен внутренний маршрут.</p> : null}
-      {error && editor === undefined && companyEditor === undefined ? <div className="error-panel" role="alert"><strong>Не удалось выполнить действие</strong><p>{error}</p><Button size="sm" disabled={loading} onClick={() => void reload(session.token)}>Обновить каталог</Button></div> : null}
+      {error && editor === undefined && companyEditor === undefined ? <div className="error-panel" role="alert"><strong>Не удалось выполнить действие</strong><p>{error}</p><Button size="sm" disabled={loading} onClick={() => void reload()}>Обновить каталог</Button></div> : null}
       {loading ? <Spinner label="Загружаем водителей и компании…" /> : <>
         <section className="contractor-catalog-section" aria-label="Водители без компании">
           <header className="contractor-catalog-section__heading"><h3>Без компании</h3><Badge>{independent.length}</Badge></header>

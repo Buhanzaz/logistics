@@ -17,8 +17,7 @@ from app.schemas.geocoding import (
     GeocodingResolveQuery,
     GeocodingSuggestionsQuery,
     ResolvedAddress,
-    ReverseGeocodingQuery,
-)
+    ReverseGeocodingQuery)
 
 router = APIRouter(prefix="/geocoding", tags=["geocoding"])
 
@@ -30,13 +29,11 @@ class YandexGeocodingClient:
         self,
         settings: Settings,
         *,
-        transport: httpx.AsyncBaseTransport | None = None,
-    ) -> None:
+        transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._settings = settings
         self._client = httpx.AsyncClient(
             timeout=settings.yandex_geocoding_timeout_seconds,
-            transport=transport,
-        )
+            transport=transport)
 
     async def aclose(self) -> None:
         """Release the adapter's connection pool."""
@@ -48,8 +45,7 @@ class YandexGeocodingClient:
 
         api_key = self._require_key(
             self._settings.yandex_geosuggest_api_key,
-            "Yandex Geosuggest is not configured.",
-        )
+            "Yandex Geosuggest is not configured.")
         params: dict[str, str | int] = {
             "apikey": api_key,
             "text": query.text,
@@ -82,8 +78,7 @@ class YandexGeocodingClient:
                     title=title,
                     subtitle=subtitle,
                     address=address,
-                    uri=uri,
-                )
+                    uri=uri)
             )
         return suggestions
 
@@ -109,14 +104,12 @@ class YandexGeocodingClient:
         self,
         *,
         geocode: str | None = None,
-        uri: str | None = None,
-    ) -> ResolvedAddress:
+        uri: str | None = None) -> ResolvedAddress:
         """Execute and validate one forward or reverse Geocoder request."""
 
         api_key = self._require_key(
             self._settings.yandex_geocoder_api_key,
-            "Yandex Geocoder is not configured.",
-        )
+            "Yandex Geocoder is not configured.")
         if (geocode is None) == (uri is None):
             raise ValueError("Exactly one Geocoder lookup parameter is required")
         if uri is not None:
@@ -132,8 +125,7 @@ class YandexGeocodingClient:
                 "lang": "ru_RU",
                 "results": 1,
                 **lookup,
-            },
-        )
+            })
         response = payload.get("response")
         if not isinstance(response, Mapping):
             raise self._invalid_response("Yandex Geocoder returned an invalid response.")
@@ -159,14 +151,12 @@ class YandexGeocodingClient:
         return ResolvedAddress(
             address=address,
             latitude=latitude,
-            longitude=longitude,
-        )
+            longitude=longitude)
 
     async def _request_json(
         self,
         url: str,
-        params: Mapping[str, str | int],
-    ) -> Mapping[str, Any]:
+        params: Mapping[str, str | int]) -> Mapping[str, Any]:
         """Fetch one bounded provider response and map transport failures to Problem Details."""
 
         try:
@@ -175,14 +165,12 @@ class YandexGeocodingClient:
             raise ApiError(
                 503,
                 "GEOCODING_PROVIDER_UNAVAILABLE",
-                "Yandex geocoding provider is unavailable.",
-            ) from exc
+                "Yandex geocoding provider is unavailable.") from exc
         if not response.is_success:
             raise ApiError(
                 503,
                 "GEOCODING_PROVIDER_UNAVAILABLE",
-                "Yandex geocoding provider rejected the request.",
-            )
+                "Yandex geocoding provider rejected the request.")
         try:
             payload = response.json()
         except ValueError as exc:
@@ -274,8 +262,7 @@ class YandexGeocodingClient:
 
 
 async def get_yandex_geocoding_client(
-    settings: SettingsDep,
-) -> AsyncIterator[YandexGeocodingClient]:
+    settings: SettingsDep) -> AsyncIterator[YandexGeocodingClient]:
     """Yield a request-scoped adapter and always close its outbound connection pool."""
 
     client = YandexGeocodingClient(settings)
@@ -291,8 +278,7 @@ GeocodingClientDep = Annotated[YandexGeocodingClient, Depends(get_yandex_geocodi
 @router.get("/suggestions", response_model=list[AddressSuggestion])
 async def suggest_addresses(
     query: Annotated[GeocodingSuggestionsQuery, Query()],
-    client: GeocodingClientDep,
-) -> list[AddressSuggestion]:
+    client: GeocodingClientDep) -> list[AddressSuggestion]:
     """Return address autocomplete results without exposing the provider credential."""
 
     return await client.suggest(query)
@@ -301,8 +287,7 @@ async def suggest_addresses(
 @router.get("/resolve", response_model=ResolvedAddress)
 async def resolve_address(
     query: Annotated[GeocodingResolveQuery, Query()],
-    client: GeocodingClientDep,
-) -> ResolvedAddress:
+    client: GeocodingClientDep) -> ResolvedAddress:
     """Resolve an autocomplete result to the canonical address and map point."""
 
     return await client.resolve(query.uri)
@@ -311,8 +296,7 @@ async def resolve_address(
 @router.get("/reverse", response_model=ResolvedAddress)
 async def reverse_geocode(
     query: Annotated[ReverseGeocodingQuery, Query()],
-    client: GeocodingClientDep,
-) -> ResolvedAddress:
+    client: GeocodingClientDep) -> ResolvedAddress:
     """Return the address known for a point placed directly on the map."""
 
     return await client.reverse(query)

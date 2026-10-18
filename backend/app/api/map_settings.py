@@ -10,8 +10,7 @@ from app.schemas.map_settings import (
     AdminMapSettingsRead,
     MapProvider,
     MapSettingsRead,
-    MapSettingsUpdate,
-)
+    MapSettingsUpdate)
 from app.services.map_settings import read_map_settings, replace_map_settings
 
 admin_router = APIRouter(tags=["admin map settings"])
@@ -22,15 +21,13 @@ def _admin_read(settings: MapDisplaySettings) -> AdminMapSettingsRead:
     return AdminMapSettingsRead(
         version=settings.version,
         provider=cast(MapProvider, settings.provider),
-        yandex_api_key_configured=bool(settings.yandex_api_key),
-    )
+        yandex_api_key_configured=bool(settings.yandex_api_key))
 
 
 @admin_router.get(
     "/map-settings",
     response_model=AdminMapSettingsRead,
-    operation_id="plannerAdminGetMapSettings",
-)
+    operation_id="plannerAdminGetMapSettings")
 async def get_admin_map_settings(session: SessionDep, response: Response) -> AdminMapSettingsRead:
     """The parent router requires the isolated SYSTEM_ADMIN administration client."""
 
@@ -41,8 +38,7 @@ async def get_admin_map_settings(session: SessionDep, response: Response) -> Adm
 @admin_router.put(
     "/map-settings",
     response_model=AdminMapSettingsRead,
-    operation_id="plannerAdminReplaceMapSettings",
-)
+    operation_id="plannerAdminReplaceMapSettings")
 async def put_admin_map_settings(
     payload: MapSettingsUpdate, session: SessionDep, response: Response
 ) -> AdminMapSettingsRead:
@@ -61,5 +57,4 @@ async def get_map_settings(session: SessionDep, response: Response) -> MapSettin
     return MapSettingsRead(
         version=settings.version,
         provider=cast(MapProvider, settings.provider),
-        yandex_api_key=settings.yandex_api_key if settings.provider == "YANDEX" else None,
-    )
+        yandex_api_key=settings.yandex_api_key if settings.provider == "YANDEX" else None)

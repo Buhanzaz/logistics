@@ -1,14 +1,12 @@
 import type { components } from './schema';
-import { requireSimulatorAccessToken, simulatorApiUrl } from './client';
+import { simulatorApiUrl } from './client';
 import { fetchApi, readApiResponse } from './http-response';
 
 export type MapDisplaySettings = components['schemas']['MapSettingsRead'];
 
 /** Read the owner's global display configuration; a missing provider is an error. */
 export async function getMapSettings(signal?: AbortSignal): Promise<MapDisplaySettings> {
-  const token = await requireSimulatorAccessToken();
   const response = await fetchApi(simulatorApiUrl('/map-settings'), {
-    headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
     ...(signal ? { signal } : {}),
   });

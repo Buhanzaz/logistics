@@ -63,17 +63,15 @@ function contractorResponse<T>(response: Response): Promise<T> {
   return readApiResponse<T>(response, 'Не удалось выполнить запрос');
 }
 
-function headers(accessToken: string, withBody = false): HeadersInit {
+function headers(withBody = false): HeadersInit {
   return {
     Accept: 'application/json, application/problem+json',
-    Authorization: `Bearer ${accessToken}`,
     ...(withBody ? { 'Content-Type': 'application/json' } : {}),
   };
 }
 
 /** Creates or replays one explicit contractor route share through the public gateway. */
 export async function createContractorRouteShare(
-  accessToken: string,
   warehouseId: UUID,
   input: ContractorRouteShareInput,
   idempotencyKey: UUID,
@@ -83,7 +81,7 @@ export async function createContractorRouteShare(
     {
       method: 'POST',
       headers: {
-        ...headers(accessToken, true),
+        ...headers(true),
         'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(input),
@@ -94,19 +92,17 @@ export async function createContractorRouteShare(
 
 /** Loads the complete warehouse-owned contractor catalog, including inactive profiles. */
 export async function listContractorDrivers(
-  accessToken: string,
   warehouseId: UUID,
 ): Promise<ContractorDriver[]> {
   const response = await fetchApi(
     `/api/task-board/warehouses/${encodeURIComponent(warehouseId)}/logistics-drivers/contractors`,
-    { headers: headers(accessToken) },
+    { headers: headers() },
   );
   return contractorResponse<ContractorDriver[]>(response);
 }
 
 /** Creates a reusable contractor profile without a staff vehicle, shift, or availability period. */
 export async function createContractorDriver(
-  accessToken: string,
   warehouseId: UUID,
   input: ContractorDriverInput,
   contractorId: UUID = crypto.randomUUID(),
@@ -115,7 +111,7 @@ export async function createContractorDriver(
     `/api/task-board/warehouses/${encodeURIComponent(warehouseId)}/logistics-drivers/contractors`,
     {
       method: 'POST',
-      headers: headers(accessToken, true),
+      headers: headers(true),
       body: JSON.stringify({
         contractorId,
         displayName: input.displayName,
@@ -130,7 +126,6 @@ export async function createContractorDriver(
 
 /** Updates one contractor behind task-board optimistic version fencing. */
 export async function updateContractorDriver(
-  accessToken: string,
   warehouseId: UUID,
   contractor: ContractorDriver,
   input: ContractorDriverInput,
@@ -139,7 +134,7 @@ export async function updateContractorDriver(
     `/api/task-board/warehouses/${encodeURIComponent(warehouseId)}/logistics-drivers/contractors/${encodeURIComponent(contractor.workerId)}`,
     {
       method: 'PATCH',
-      headers: headers(accessToken, true),
+      headers: headers(true),
       body: JSON.stringify({ expectedVersion: contractor.version, ...input }),
     },
   );
@@ -148,7 +143,6 @@ export async function updateContractorDriver(
 
 /** Deletes an unused contractor profile behind task-board optimistic version fencing. */
 export async function deleteContractorDriver(
-  accessToken: string,
   warehouseId: UUID,
   contractor: ContractorDriver,
 ): Promise<void> {
@@ -157,7 +151,7 @@ export async function deleteContractorDriver(
     `/api/task-board/warehouses/${encodeURIComponent(warehouseId)}/logistics-drivers/contractors/${encodeURIComponent(contractor.workerId)}?${query.toString()}`,
     {
       method: 'DELETE',
-      headers: headers(accessToken),
+      headers: headers(),
     },
   );
   if (!response.ok) await contractorResponse<never>(response);
@@ -167,28 +161,28 @@ function companyPath(warehouseId: UUID): string {
   return `/api/task-board/warehouses/${encodeURIComponent(warehouseId)}/logistics-drivers/companies`;
 }
 
-export async function listContractorCompanies(accessToken: string, warehouseId: UUID): Promise<ContractorCompany[]> {
-  return contractorResponse<ContractorCompany[]>(await fetchApi(companyPath(warehouseId), { headers: headers(accessToken) }));
+export async function listContractorCompanies(warehouseId: UUID): Promise<ContractorCompany[]> {
+  return contractorResponse<ContractorCompany[]>(await fetchApi(companyPath(warehouseId), { headers: headers() }));
 }
 
 /** The editor retains companyId across retries; the owner checks identical create replays. */
-export async function createContractorCompany(accessToken: string, warehouseId: UUID, input: ContractorCompanyInput, companyId: UUID): Promise<ContractorCompany> {
+export async function createContractorCompany(warehouseId: UUID, input: ContractorCompanyInput, companyId: UUID): Promise<ContractorCompany> {
   return contractorResponse<ContractorCompany>(await fetchApi(companyPath(warehouseId), {
-    method: 'POST', headers: headers(accessToken, true), body: JSON.stringify({ companyId, ...input }),
+    method: 'POST', headers: headers(true), body: JSON.stringify({ companyId, ...input }),
   }));
 }
 
-export async function updateContractorCompany(accessToken: string, warehouseId: UUID, company: ContractorCompany, input: ContractorCompanyInput): Promise<ContractorCompany> {
+export async function updateContractorCompany(warehouseId: UUID, company: ContractorCompany, input: ContractorCompanyInput): Promise<ContractorCompany> {
   return contractorResponse<ContractorCompany>(await fetchApi(`${companyPath(warehouseId)}/${encodeURIComponent(company.companyId)}`, {
-    method: 'PATCH', headers: headers(accessToken, true), body: JSON.stringify({ expectedVersion: company.version, ...input }),
+    method: 'PATCH', headers: headers(true), body: JSON.stringify({ expectedVersion: company.version, ...input }),
   }));
 }
 
 /** The service refuses deletion while any driver still belongs to the company. */
-export async function deleteContractorCompany(accessToken: string, warehouseId: UUID, company: ContractorCompany): Promise<void> {
+export async function deleteContractorCompany(warehouseId: UUID, company: ContractorCompany): Promise<void> {
   const query = new URLSearchParams({ expectedVersion: String(company.version) });
   const response = await fetchApi(`${companyPath(warehouseId)}/${encodeURIComponent(company.companyId)}?${query}`, {
-    method: 'DELETE', headers: headers(accessToken),
+    method: 'DELETE', headers: headers(),
   });
   if (!response.ok) await contractorResponse<never>(response);
 }

@@ -68,6 +68,20 @@ function rwmsDelivery() {
 
 async function selectTargetDate(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Новая дата доставки' }));
+  // Calendar opens on current month; navigate until target is visible (past/future resilience).
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const target = screen.queryByRole('button', { name: /^среда, 2 сентября 2026 г\.$/u });
+    if (target) {
+      await user.click(target);
+      return;
+    }
+    const prev = screen.queryByRole('button', { name: 'Предыдущий месяц' });
+    const next = screen.queryByRole('button', { name: 'Следующий месяц' });
+    // Prefer going back, as TARGET_DATE is typically near the request's scheduled_date and may be past.
+    if (prev) await user.click(prev);
+    else if (next) await user.click(next);
+    else break;
+  }
   await user.click(await screen.findByRole('button', { name: /^среда, 2 сентября 2026 г\.$/u }));
 }
 

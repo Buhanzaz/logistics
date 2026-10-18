@@ -6,6 +6,7 @@ import {
   PlayCircle,
   RefreshCw,
   Route as RouteIcon,
+  Settings,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -64,6 +65,7 @@ import { warehouseDisplayName } from '../domain/warehouse-presentation';
 import { useMapLayout } from './map-layout';
 import logotypeUrl from '../assets/logotype.svg';
 import { loadWarehouseKinds } from '../api/warehouse-directory';
+import { SettingsDialog } from '../features/settings/SettingsDialog';
 
 type DialogState =
   | { kind: 'workload-generator' }
@@ -191,6 +193,7 @@ export function App() {
   const [inspectorWidth, setInspectorWidth] = useState(savedInspectorWidth);
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 760);
   const [routesNeedRefresh, setRoutesNeedRefresh] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [loadedRequestPage, setLoadedRequestPage] = useState<{
     contextKey: string;
     requests: LogisticsRequest[];
@@ -1072,6 +1075,7 @@ export function App() {
           <div className="topbar__brand"><img src={logotypeUrl} width={32} height={32} alt="" /><span className="sidebar__brand-copy"><strong translate="no">BLOCKBOX</strong><span>Логистика</span></span></div>
           <div />
           <div className="topbar__actions">
+            <Button aria-label="Настройки" title="Настройки" onClick={() => setSettingsOpen(true)}><Settings size={16} aria-hidden="true" /></Button>
             <ThemeSwitch />
             <NotificationCenter />
           </div>
@@ -1085,6 +1089,7 @@ export function App() {
             })}
           </div>
         </div>
+        {settingsOpen ? <SettingsDialog warehouse={null} onClose={() => setSettingsOpen(false)} onOpenWarehouseSettings={() => setSettingsOpen(false)} /> : null}
         <Toasts />
       </div>
     );
@@ -1187,6 +1192,7 @@ export function App() {
           <Button aria-label="Проверить слот" title="Проверить слот" disabled={!acceptingRequests} variant={slotPlannerOpen ? 'primary' : 'secondary'} onClick={() => slotPlannerOpen ? closeSlotPlanner() : setSlotPlannerOpen(true)}><RouteIcon size={15} aria-hidden="true" /><span>Проверить слот</span></Button>
           {currentRun && !isTerminal(currentRun.status) ? <Button className="topbar__cancel" variant="danger" disabled={busy || currentRun.cancel_requested} onClick={() => void cancelOptimization()}><span>{currentRun.cancel_requested ? 'Отменяем…' : 'Отменить'}</span></Button> : null}
           <div className="segmented" aria-label="Режим приложения">{([['PLAN_DAY', 'План дня'], ['SIMULATION', 'Симуляция']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={mode === value} onClick={() => changeMode(value)}>{value === 'PLAN_DAY' ? <RouteIcon size={13} aria-hidden="true" /> : <PlayCircle size={13} aria-hidden="true" />}{label}</button>)}</div>
+          <Button aria-label="Настройки" title="Настройки" onClick={() => setSettingsOpen(true)}><Settings size={16} aria-hidden="true" /></Button>
           <ThemeSwitch />
           <NotificationCenter />
         </div>
@@ -1463,6 +1469,7 @@ export function App() {
           : await api.markDriverUnavailable(plan.id, { expected_version: plan.version, driver_shift_id: dialog.driverShiftId, effective_at: override.effective_at, reason, persist: false }, workspace, plan);
         setValidation(result); addSimulationOverride(override); setDialog(null);
       }, dialog.overrideKind === 'delay' ? 'Задержка применена к симуляции' : 'Недоступность применена к симуляции'); }} /> : null}
+      {settingsOpen ? <SettingsDialog warehouse={workspace?.warehouse ?? null} onClose={() => setSettingsOpen(false)} onOpenWarehouseSettings={() => { setSettingsOpen(false); if (workspace) setDialog({ kind: 'warehouse', value: workspace.warehouse }); }} /> : null}
       <Toasts />
     </div>
   );
