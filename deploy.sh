@@ -115,14 +115,64 @@ step "Запуск контейнеров (может занять 5–30 мин
 if [ "$NO_BUILD" = false ]; then
   log "Собираю образы... (frontend + backend; Valhalla тянется готовым образом)"
   # shellcheck disable=SC2086
-  $COMPOSE $COMPOSE_FILES build --parallel 2>&1 | tail -20 || true
+  if ! $COMPOSE $COMPOSE_FILES build --parallel 2>&1 | tail -20; then
+    err "Сборка образов завершилась с ошибкой. Контейнеры не запускаются; проверьте сообщения выше."
+    exit 1
+  fi
 else
   log "Пропускаю сборку (--no-build)"
 fi
 
-log "Поднимаю стек: $COMPOSE $COMPOSE_FILES up -d"
-# shellcheck disable=SC2086
-$COMPOSE $COMPOSE_FILES up -d
+log "Поднимаю стек: $COMPOSE $COMPOSE_FILES up -d --pull missing"
+
+# `--pull missing` keeps already-present image tags in Docker's local cache and
+# fetches only images that are not available locally. If a pull is interrupted,
+# Docker also reuses the layers downloaded by the previous attempt.
+# A transient registry/CDN outage can therefore be retried safely. Do not retry
+# configuration or application errors.
+compose_up_with_retries() {
+  local max_attempts=3
+  local delay_seconds=5
+  local attempt=1
+  local output_file
+  local compose_status=0
+
+  output_file=$(mktemp "${TMPDIR:-/tmp}/logistics-compose-up.XXXXXX")
+  while true; do
+    log "Запуск контейнеров (попытка $attempt/$max_attempts)"
+    # shellcheck disable=SC2086
+    if $COMPOSE $COMPOSE_FILES up -d --pull missing 2>&1 | tee "$output_file"; then
+      rm -f "$output_file"
+      return 0
+    else
+      compose_status=$?
+    fi
+
+    if ! grep -Eqi '(network is unreachable|no route to host|connection refused|connection reset|connection timed out|i/o timeout|tls handshake timeout|context deadline exceeded|unexpected eof|temporary failure in name resolution|no such host|server misbehaving|could not resolve host|failed to do request: (Get|Head)|too many requests|429 too many requests|503 service unavailable)' "$output_file"; then
+      err "Docker Compose не смог запустить контейнеры; подробности приведены выше."
+      rm -f "$output_file"
+      return "$compose_status"
+    fi
+
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      err "Не удалось скачать образы после $max_attempts попыток."
+      if grep -Eqi '(network is unreachable|no route to host)' "$output_file"; then
+        warn "Похоже, у VPS нет рабочего маршрута к IPv6-адресу registry/CDN. Проверьте IPv6-маршрут или настройте Docker/хост использовать доступный IPv4, затем повторите ./deploy.sh --vps --no-build."
+      else
+        warn "Проверьте исходящий доступ VPS к Docker Hub/GHCR и повторите ./deploy.sh --vps --no-build. Уже скачанные слои сохраняются."
+      fi
+      rm -f "$output_file"
+      return "$compose_status"
+    fi
+
+    warn "Временный сбой при скачивании образов. Повтор через ${delay_seconds} сек.; уже скачанные слои сохраняются."
+    sleep "$delay_seconds"
+    attempt=$((attempt + 1))
+    delay_seconds=$((delay_seconds * 2))
+  done
+}
+
+compose_up_with_retries
 
 # ---------- ожидание здоровья ----------
 step "Ожидание готовности сервисов"
