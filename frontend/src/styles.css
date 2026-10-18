@@ -796,3 +796,12 @@ textarea.input { resize: vertical; min-height: 74px; }
 
 .operations-journal-disclosure { display: grid; gap: 12px; margin-bottom: 16px; }
 .notification-center__preferences { padding: 12px; border-bottom: 1px solid var(--line); }
+.settings-dialog { display: grid; gap: 16px; }
+.settings-dialog__notice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); color: var(--muted); }
+.settings-dialog__notice svg { flex: 0 0 auto; color: var(--accent); margin-top: 2px; }
+.settings-dialog__notice strong { display: block; color: var(--text); font-size: 13px; }
+.settings-dialog__notice p { margin: 4px 0 0; font-size: 11px; line-height: 1.4; }
+.settings-dialog__section { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.settings-dialog__section h3 { margin: 0; font-size: 13px; }
+.settings-dialog__section h4 { margin: 0; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.settings-dialog__external { background: var(--panel); }

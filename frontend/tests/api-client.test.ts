@@ -3,7 +3,6 @@ import {
   ApiError,
   api,
   getWarehouseWorkspace,
-  setSimulatorAccessTokenProvider,
   startOptimizationEventStream,
   type OptimizationStreamEvent,
 } from '../src/api/client';
@@ -52,11 +51,7 @@ beforeEach(() => {
 });
 
 describe('warehouse workspace transport', () => {
-  it('uses a fresh panel USER bearer for each operational request', async () => {
-    const tokenProvider = vi.fn()
-      .mockResolvedValueOnce('panel-token-1')
-      .mockResolvedValueOnce('panel-token-2');
-    setSimulatorAccessTokenProvider(tokenProvider);
+  it('uses no authorization for operational requests', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([]));
@@ -65,28 +60,13 @@ describe('warehouse workspace transport', () => {
     await api.listWarehouses();
     await api.listWarehouses();
 
-    expect(tokenProvider).toHaveBeenCalledTimes(2);
-    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get('Authorization'))
-      .toBe('Bearer panel-token-1');
-    expect(new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).get('Authorization'))
-      .toBe('Bearer panel-token-2');
-  });
-
-  it('fails explicitly before transport when the panel session is missing', async () => {
-    setSimulatorAccessTokenProvider(() => Promise.resolve(null));
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-
-    const error = await api.listWarehouses().catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(ApiError);
-    expect(error).toMatchObject({ status: 401, code: 'AUTHENTICATION_REQUIRED' });
-    expect((error as Error).message).toContain('Войдите в RWMS');
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).has('Authorization'))
+      .toBe(false);
+    expect(new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).has('Authorization'))
+      .toBe(false);
   });
 
   it('keeps the health probe public', async () => {
-    setSimulatorAccessTokenProvider(() => Promise.resolve(null));
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ status: 'ok' }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -582,8 +562,7 @@ describe('planning lifecycle', () => {
 
 describe('existing delivery reschedule transport', () => {
   it('calculates by selected date and applies the exact owner fences with idempotency', async () => {
-    setSimulatorAccessTokenProvider(() => Promise.resolve('panel-token'));
-    const options = {
+        const options = {
       request_id: 'request-1',
       request_version: 7,
       source_plan_id: '11111111-1111-4111-8111-111111111111',
@@ -689,8 +668,7 @@ describe('transport errors', () => {
   });
 
   it('keeps FastAPI validation diagnostics without exposing them through the error message', async () => {
-    setSimulatorAccessTokenProvider(() => Promise.resolve('panel-token'));
-    const rawDetail = [{
+        const rawDetail = [{
       type: 'greater_than',
       loc: ['body', 'loading_minutes'],
       msg: 'Input should be greater than 0',
@@ -714,8 +692,7 @@ describe('transport errors', () => {
   });
 
   it('retains an upstream diagnostic only in Problem Details and returns actionable Russian copy', async () => {
-    setSimulatorAccessTokenProvider(() => Promise.resolve('panel-token'));
-    const rawDetail = 'RMS Logistics Service returned HTTP 400: {"internal":"trace"}';
+        const rawDetail = 'RMS Logistics Service returned HTTP 400: {"internal":"trace"}';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
       detail: rawDetail,
       code: 'RWMS_REQUEST_FAILED',
@@ -802,8 +779,7 @@ describe('transport errors', () => {
 
 describe('optimization event transport', () => {
   it('streams custom and terminal events with a bearer header and no token in the URL', async () => {
-    setSimulatorAccessTokenProvider(() => Promise.resolve('stream-token'));
-    const stream = new ReadableStream<Uint8Array>({
+        const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode(
           'id: 7\nevent: phase_started\ndata: {"event_type":"phase_started","sequence":7',
@@ -844,7 +820,7 @@ describe('optimization event transport', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/optimization-runs/run-1/stream');
     expect(url).not.toContain('stream-token');
-    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer stream-token');
+    expect(new Headers(init.headers).has('Authorization')).toBe(false);
     expect(new Headers(init.headers).get('Accept')).toBe('text/event-stream');
   });
 
@@ -854,8 +830,7 @@ describe('optimization event transport', () => {
       const tokenProvider = vi.fn()
         .mockResolvedValueOnce('stream-token-1')
         .mockResolvedValueOnce('stream-token-2');
-      setSimulatorAccessTokenProvider(tokenProvider);
-      const interrupted = new ReadableStream<Uint8Array>({
+            const interrupted = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(new TextEncoder().encode('id: 11\nevent: trace\ndata: {"sequence":11}\n\n'));
           controller.close();
@@ -886,7 +861,7 @@ describe('optimization event transport', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       const [, reconnectInit] = fetchMock.mock.calls[1] as [string, RequestInit];
       const reconnectHeaders = new Headers(reconnectInit.headers);
-      expect(reconnectHeaders.get('Authorization')).toBe('Bearer stream-token-2');
+      expect(reconnectHeaders.has('Authorization')).toBe(false);
       expect(reconnectHeaders.get('Last-Event-ID')).toBe('11');
     } finally {
       vi.useRealTimers();

@@ -8,8 +8,7 @@ from app.models import LogisticsRequest
 from app.schemas.domain import (
     LogisticsRequestRead,
     PlanningTaskRead,
-    RequestDateOptionRead,
-)
+    RequestDateOptionRead)
 
 
 async def request_read(session: AsyncSession, request: LogisticsRequest) -> LogisticsRequestRead:
@@ -61,5 +60,4 @@ async def request_read(session: AsyncSession, request: LogisticsRequest) -> Logi
         date_options=[
             RequestDateOptionRead.model_validate(option) for option in request.date_options
         ],
-        tasks=[PlanningTaskRead.model_validate(task) for task in request.tasks],
-    )
+        tasks=[PlanningTaskRead.model_validate(task) for task in request.tasks])

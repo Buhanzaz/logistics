@@ -21,11 +21,9 @@ async def health(session: SessionDep, settings: SettingsDep) -> HealthRead:
         raise ApiError(
             503,
             "DATABASE_NOT_READY",
-            "PostgreSQL or the required PostGIS extension is unavailable",
-        ) from exc
+            "PostgreSQL or the required PostGIS extension is unavailable") from exc
     return HealthRead(
         status="ok",
         database="ready",
         postgis=postgis,
-        routing_provider=settings.routing_provider,
-    )
+        routing_provider=settings.routing_provider)

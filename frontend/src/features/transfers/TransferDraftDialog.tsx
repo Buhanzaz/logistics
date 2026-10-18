@@ -1,8 +1,7 @@
-import { ArrowRightLeft, LogIn, PackageOpen, Plus, Trash2, Truck, UserRound } from 'lucide-react';
+import { ArrowRightLeft, PackageOpen, Plus, Trash2, Truck, UserRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { beginPanelLogin, restorePanelUser } from '../../auth/panel-oidc';
 import { DatePicker } from '../../components/DatePicker';
-import { Button, CheckboxField, EmptyState, Field, Modal, SelectField, Spinner } from '../../components/ui';
+import { Button, CheckboxField, Field, Modal, SelectField, Spinner } from '../../components/ui';
 import type { AvailableWarehouse } from '../../domain/types';
 import { formatDistance, formatDuration, localDateTimeToIso } from '../../utils/format';
 import { userFacingErrorDetail } from '../../utils/user-facing-error';
@@ -22,12 +21,6 @@ import {
   loadCapitalRepairCards,
   type CapitalRepairCard,
 } from './transfer-client';
-
-/** Shared panel authentication state visible while the transfer dialog is open. */
-type SessionState =
-  | { status: 'loading' }
-  | { status: 'unauthenticated' }
-  | { status: 'authenticated'; accessToken: string };
 
 /** One client-side furniture row that becomes a per-cabin canonical requirement. */
 interface FurnitureDraft {
@@ -76,10 +69,6 @@ function warehouseOptionLabel(warehouse: AvailableWarehouse) {
   if (warehouse.latitude === null || warehouse.longitude === null) return `${warehouse.name} · Нет координат в RWMS`;
   if (!warehouse.routing_ready) return `${warehouse.name} · ${warehouse.routing_unavailable_reason ?? 'Недоступен для маршрутизации'}`;
   return `${warehouse.name}${warehouse.city ? ` · ${warehouse.city}` : ''}`;
-}
-
-function currentReturnTo() {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
 function errorMessage(value: unknown, fallback: string) {
@@ -143,7 +132,6 @@ export function TransferDraftDialog({
   const [repairState, setRepairState] = useState<LoadState<CapitalRepairCard[]>>({ status: 'idle' });
   const [includeCapitalRepairs, setIncludeCapitalRepairs] = useState(false);
   const [selectedRepairIds, setSelectedRepairIds] = useState<string[]>([]);
-  const [session, setSession] = useState<SessionState>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const idempotencyIntentRef = useRef<{ fingerprint: string; key: string } | null>(null);
@@ -200,52 +188,37 @@ export function TransferDraftDialog({
   };
 
   useEffect(() => {
-    let active = true;
-    void restorePanelUser()
-      .then((user) => {
-        if (!active) return;
-        setSession(user ? { status: 'authenticated', accessToken: user.access_token } : { status: 'unauthenticated' });
-      })
-      .catch((sessionError: unknown) => {
-        if (!active) return;
-        setSession({ status: 'unauthenticated' });
-        setError(errorMessage(sessionError, 'Не удалось проверить сессию RWMS'));
-      });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    if (session.status !== 'authenticated' || !sourceWarehouseId || !targetWarehouseId || sourceWarehouseId === targetWarehouseId) {
+    if (!sourceWarehouseId || !targetWarehouseId || sourceWarehouseId === targetWarehouseId) {
       setRepairState({ status: 'idle' });
       setSelectedRepairIds([]);
       return undefined;
     }
     let active = true;
     setRepairState({ status: 'loading' });
-    void loadCapitalRepairCards(session.accessToken, targetWarehouseId)
+    void loadCapitalRepairCards(targetWarehouseId)
       .then((value) => { if (active) setRepairState({ status: 'ready', value }); })
       .catch((loadError: unknown) => { if (active) setRepairState({ status: 'error', message: errorMessage(loadError, 'Не удалось получить бытовки на капремонт') }); });
     return () => { active = false; };
-  }, [session, sourceWarehouseId, targetWarehouseId]);
+  }, [sourceWarehouseId, targetWarehouseId]);
 
   useEffect(() => {
     setSelectedRepairIds((current) => current.slice(0, reverseCapacity));
   }, [reverseCapacity]);
 
   useEffect(() => {
-    if (session.status !== 'authenticated' || !includeCabins || !sourceWarehouseId) {
+    if (!includeCabins || !sourceWarehouseId) {
       setCatalogState({ status: 'idle' });
       return undefined;
     }
     let active = true;
     setCatalogState({ status: 'loading' });
-    void loadTransferCargoCatalog(session.accessToken, sourceWarehouseId)
+    void loadTransferCargoCatalog(sourceWarehouseId)
       .then((value) => { if (active) setCatalogState({ status: 'ready', value }); })
       .catch((catalogError: unknown) => {
         if (active) setCatalogState({ status: 'error', message: errorMessage(catalogError, 'Не удалось получить состав из RWMS') });
       });
     return () => { active = false; };
-  }, [includeCabins, session, sourceWarehouseId]);
+  }, [includeCabins, sourceWarehouseId]);
 
   useEffect(() => {
     const localWarehouseId = sourceWarehouse?.local_warehouse_id;
@@ -314,18 +287,9 @@ export function TransferDraftDialog({
     return () => { active = false; };
   }, [cabinCount, currentRouteVehicleId, plannedDepartureAt, sourceWarehouseId, targetWarehouseId]);
 
-  const login = async () => {
-    setError(null);
-    try {
-      await beginPanelLogin(currentReturnTo());
-    } catch (loginError: unknown) {
-      setError(errorMessage(loginError, 'Не удалось открыть вход RWMS'));
-    }
-  };
-
   const addContractor = async () => {
     setError(null);
-    if (session.status !== 'authenticated' || !sourceWarehouse || !contractorName.trim() || !contractorPhone.trim()) {
+    if (!sourceWarehouse || !contractorName.trim() || !contractorPhone.trim()) {
       setError('Заполните имя и телефон наёмного водителя');
       return;
     }
@@ -334,7 +298,6 @@ export function TransferDraftDialog({
     setContractorBusy(true);
     try {
       const driver = await createTransferContractor({
-        accessToken: session.accessToken,
         warehouseId: sourceWarehouseId,
         contractorId: contractorIntentRef.current.id,
         displayName: contractorName.trim(),
@@ -406,13 +369,7 @@ export function TransferDraftDialog({
     }
     setBusy(true);
     try {
-      const user = await restorePanelUser();
-      if (!user) {
-        setSession({ status: 'unauthenticated' });
-        return;
-      }
-      setSession({ status: 'authenticated', accessToken: user.access_token });
-      const intention: Omit<CreateTransferDraftInput, 'accessToken' | 'idempotencyKey'> = {
+      const intention: Omit<CreateTransferDraftInput, 'idempotencyKey'> = {
         warehouseId: sourceWarehouseId,
         destinationWarehouseId: targetWarehouseId,
         scheduledDate: date,
@@ -453,7 +410,6 @@ export function TransferDraftDialog({
         idempotencyIntentRef.current = { fingerprint, key: crypto.randomUUID() };
       }
       const draft = await createTransferDraft({
-        accessToken: user.access_token,
         idempotencyKey: idempotencyIntentRef.current.key,
         ...intention,
       });
@@ -475,18 +431,8 @@ export function TransferDraftDialog({
       description="Логист задаёт маршрут и требуемый груз здесь; RWMS получает готовый черновик подготовки."
       onClose={onClose}
       wide
-      footer={session.status === 'authenticated' ? <><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={busy || routingWarehouses.length < 2 || vehicleStatus === 'loading' || estimateState.status === 'loading'} onClick={() => void submit()}>{busy ? 'Создаём…' : 'Создать черновик'}</Button></> : undefined}
+      footer={<><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={busy || routingWarehouses.length < 2 || vehicleStatus === 'loading' || estimateState.status === 'loading'} onClick={() => void submit()}>{busy ? 'Создаём…' : 'Создать черновик'}</Button></>}
     >
-      {session.status === 'loading' ? <Spinner label="Проверяем сессию RWMS…" /> : null}
-      {session.status === 'unauthenticated' ? (
-        <EmptyState
-          icon={<LogIn size={22} aria-hidden="true" />}
-          title="Нужен вход в RWMS"
-          description="Войдите своей учётной записью пользователя. После входа вы вернётесь в эту логистику и сможете сохранить перемещение."
-          action={<Button variant="primary" onClick={() => void login()}><LogIn size={15} aria-hidden="true" />Войти в RWMS</Button>}
-        />
-      ) : null}
-      {session.status === 'authenticated' ? (
         <form className="transfer-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <section className="transfer-section" aria-labelledby="transfer-route-title">
             <header className="transfer-section__header">
@@ -635,7 +581,6 @@ export function TransferDraftDialog({
 
           <label className="field"><span className="field__label">Комментарий логиста</span><textarea className="input" aria-label="Комментарий логиста" rows={3} maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} /></label>
         </form>
-      ) : null}
       {routingWarehouses.length < 2 ? <div className="error-panel" role="alert"><strong>Недостаточно складов для маршрута</strong><p>Нужны как минимум два склада RWMS с координатами.</p></div> : null}
       {error ? <div className="error-panel" role="alert"><strong>Перемещение не сохранено</strong><p>{error}</p></div> : null}
     </Modal>

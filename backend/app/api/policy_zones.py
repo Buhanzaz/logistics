@@ -8,9 +8,8 @@ from fastapi import APIRouter, Header, Query, Response, status
 from app.api.authorization import require_local_warehouse_access
 from app.api.dependencies import (
     CapacityRwmsClientDep,
-    CurrentUserDep,
     SessionDep,
-    SettingsDep,
+    SettingsDep
 )
 from app.models.policy_zone import WarehousePolicyZone
 from app.schemas.policy_zones import PolicyZoneCreate, PolicyZoneRead, PolicyZoneUpdate
@@ -24,7 +23,7 @@ from app.services.policy_zones import (
     list_policy_zones,
     policy_zone_read,
     require_policy_zone,
-    update_policy_zone,
+    update_policy_zone
 )
 
 router = APIRouter(tags=["policy-zones"])
@@ -34,38 +33,33 @@ IdempotencyKey = Annotated[
         alias="Idempotency-Key",
         min_length=1,
         max_length=200,
-        pattern=r"^[\x21-\x7e]+$",
+        pattern=r"^[\x21-\x7e]+$"
     ),
 ]
 
-
 @router.get(
     "/warehouses/{warehouse_id}/policy-zones",
-    response_model=list[PolicyZoneRead],
+    response_model=list[PolicyZoneRead]
 )
 async def list_warehouse_policy_zones(
     warehouse_id: UUID,
-    session: SessionDep,
-    principal: CurrentUserDep,
+    session: SessionDep
 ) -> list[PolicyZoneRead]:
     """List exact exceptional policies visible for one authorized warehouse."""
 
-    await require_local_warehouse_access(
-        session,
-        principal,
+    await require_local_warehouse_access(session,
         warehouse_id,
-        WarehouseAccessLevel.VIEW,
+        WarehouseAccessLevel.VIEW
     )
     return [
         policy_zone_read(zone)
         for zone in await list_policy_zones(session, warehouse_id)
     ]
 
-
 @router.post(
     "/warehouses/{warehouse_id}/policy-zones",
     response_model=PolicyZoneRead,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_201_CREATED
 )
 async def create_warehouse_policy_zone(
     warehouse_id: UUID,
@@ -73,16 +67,13 @@ async def create_warehouse_policy_zone(
     session: SessionDep,
     settings: SettingsDep,
     client: CapacityRwmsClientDep,
-    principal: CurrentUserDep,
-    idempotency_key: IdempotencyKey,
+    idempotency_key: IdempotencyKey
 ) -> PolicyZoneRead:
     """Create exactly once, then advance and publish warehouse capacity facts."""
 
-    await require_local_warehouse_access(
-        session,
-        principal,
+    await require_local_warehouse_access(session,
         warehouse_id,
-        WarehouseAccessLevel.EDIT,
+        WarehouseAccessLevel.EDIT
     )
 
     async def create() -> WarehousePolicyZone:
@@ -99,7 +90,7 @@ async def create_warehouse_policy_zone(
     outcome = await execute_idempotent_create(
         session,
         operation="create_warehouse_policy_zone",
-        actor_id=principal.subject_id,
+        actor_id=UUID("00000000-0000-0000-0000-000000000000"),
         idempotency_key=idempotency_key,
         payload={
             "warehouse_id": str(warehouse_id),
@@ -107,7 +98,7 @@ async def create_warehouse_policy_zone(
         },
         resource_type="warehouse_policy_zone",
         create=create,
-        load=load,
+        load=load
     )
     if not outcome.replayed:
         await archive_policy_stale_plan_heads(session, warehouse_id)
@@ -115,37 +106,32 @@ async def create_warehouse_policy_zone(
             session,
             warehouse_id,
             settings,
-            client,
+            client
         )
     return policy_zone_read(outcome.resource)
 
-
 @router.get(
     "/warehouses/{warehouse_id}/policy-zones/{zone_id}",
-    response_model=PolicyZoneRead,
+    response_model=PolicyZoneRead
 )
 async def get_warehouse_policy_zone(
     warehouse_id: UUID,
     zone_id: UUID,
-    session: SessionDep,
-    principal: CurrentUserDep,
+    session: SessionDep
 ) -> PolicyZoneRead:
     """Read one exact owner policy after warehouse authorization."""
 
-    await require_local_warehouse_access(
-        session,
-        principal,
+    await require_local_warehouse_access(session,
         warehouse_id,
-        WarehouseAccessLevel.VIEW,
+        WarehouseAccessLevel.VIEW
     )
     return policy_zone_read(
         await require_policy_zone(session, warehouse_id, zone_id)
     )
 
-
 @router.patch(
     "/warehouses/{warehouse_id}/policy-zones/{zone_id}",
-    response_model=PolicyZoneRead,
+    response_model=PolicyZoneRead
 )
 async def patch_warehouse_policy_zone(
     warehouse_id: UUID,
@@ -153,36 +139,32 @@ async def patch_warehouse_policy_zone(
     payload: PolicyZoneUpdate,
     session: SessionDep,
     settings: SettingsDep,
-    client: CapacityRwmsClientDep,
-    principal: CurrentUserDep,
+    client: CapacityRwmsClientDep
 ) -> PolicyZoneRead:
     """Apply a fenced update and publish the new policy revision."""
 
-    await require_local_warehouse_access(
-        session,
-        principal,
+    await require_local_warehouse_access(session,
         warehouse_id,
-        WarehouseAccessLevel.EDIT,
+        WarehouseAccessLevel.EDIT
     )
     zone = await update_policy_zone(
         session,
         warehouse_id,
         zone_id,
-        payload,
+        payload
     )
     await archive_policy_stale_plan_heads(session, warehouse_id)
     await publish_capacity_after_mutation(
         session,
         warehouse_id,
         settings,
-        client,
+        client
     )
     return policy_zone_read(zone)
 
-
 @router.delete(
     "/warehouses/{warehouse_id}/policy-zones/{zone_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_204_NO_CONTENT
 )
 async def remove_warehouse_policy_zone(
     warehouse_id: UUID,
@@ -190,28 +172,25 @@ async def remove_warehouse_policy_zone(
     session: SessionDep,
     settings: SettingsDep,
     client: CapacityRwmsClientDep,
-    principal: CurrentUserDep,
-    expected_version: Annotated[int, Query(ge=1)],
+    expected_version: Annotated[int, Query(ge=1)]
 ) -> Response:
     """Delete one fenced owner policy and publish its absence."""
 
-    await require_local_warehouse_access(
-        session,
-        principal,
+    await require_local_warehouse_access(session,
         warehouse_id,
-        WarehouseAccessLevel.EDIT,
+        WarehouseAccessLevel.EDIT
     )
     await delete_policy_zone(
         session,
         warehouse_id,
         zone_id,
-        expected_version,
+        expected_version
     )
     await archive_policy_stale_plan_heads(session, warehouse_id)
     await publish_capacity_after_mutation(
         session,
         warehouse_id,
         settings,
-        client,
+        client
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

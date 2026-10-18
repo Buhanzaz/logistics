@@ -32,29 +32,17 @@ import {
   normalizeSlotAvailabilityResponse,
   type SlotAvailabilityInput,
 } from '../features/slot-availability/types';
-import { restorePanelUser } from '../auth/panel-oidc';
 import type { components } from './schema';
 import { ApiError, fetchApi, readApiResponse } from './http-response';
 
 export { ApiError, type ProblemDetails } from './http-response';
 
+// Backwards compatibility stubs – authentication is disabled.
+export function setSimulatorAccessTokenProvider(_provider: unknown): void {}
+export function defaultAccessTokenProvider(): Promise<string | null> { return Promise.resolve(null); }
+
 const configuredApiPrefix = import.meta.env.VITE_API_BASE_URL?.trim();
 const API_PREFIX = configuredApiPrefix?.replace(/\/+$/, '') || '/api';
-
-/** Resolves the current renewable USER access token for one simulator request. */
-export type SimulatorAccessTokenProvider = () => Promise<string | null>;
-
-const defaultAccessTokenProvider: SimulatorAccessTokenProvider = async () => {
-  const user = await restorePanelUser();
-  return user?.access_token ?? null;
-};
-
-let accessTokenProvider: SimulatorAccessTokenProvider = defaultAccessTokenProvider;
-
-/** Installs a scoped token source; tests use this seam without weakening production OIDC. */
-export function setSimulatorAccessTokenProvider(provider: SimulatorAccessTokenProvider | null): void {
-  accessTokenProvider = provider ?? defaultAccessTokenProvider;
-}
 
 /** Resolve a standalone-simulator endpoint against its configured deployment prefix. */
 export function simulatorApiUrl(path: string): string {
@@ -62,33 +50,10 @@ export function simulatorApiUrl(path: string): string {
   return `${API_PREFIX}${path}`;
 }
 
-function authenticationRequired(detail = 'Войдите в RWMS, чтобы продолжить работу с логистикой.'): ApiError {
-  return new ApiError(401, {
-    type: 'urn:rwms:problem:authentication-required',
-    title: 'Требуется вход в RWMS',
-    status: 401,
-    detail,
-    code: 'AUTHENTICATION_REQUIRED',
-  }, detail);
-}
-
-/** Returns a fresh or silently renewed panel USER token and never fabricates a session. */
-export async function requireSimulatorAccessToken(): Promise<string> {
-  let token: string | null;
-  try {
-    token = await accessTokenProvider();
-  } catch {
-    throw authenticationRequired('Не удалось проверить сессию RWMS. Войдите снова и повторите действие.');
-  }
-  if (!token?.trim()) throw authenticationRequired();
-  return token;
-}
-
-async function request<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   headers.set('Accept', 'application/json, application/problem+json');
-  if (authenticated) headers.set('Authorization', `Bearer ${await requireSimulatorAccessToken()}`);
   const response = await fetchApi(simulatorApiUrl(path), { ...init, headers });
   return readApiResponse<T>(response, 'Не удалось выполнить запрос', 'auto');
 }
@@ -638,7 +603,7 @@ function normalizeValidationWithDiagnostics(
 }
 
 export const api = {
-  health: () => request<{ status: string }>('/health', {}, false),
+  health: () => request<{ status: string }>('/health', {}),
 
   calculateSlotAvailability: async (input: SlotAvailabilityInput, signal?: AbortSignal) =>
     normalizeSlotAvailabilityResponse(await request<unknown>('/planning/slot-availability', {
@@ -1048,11 +1013,9 @@ export function startOptimizationEventStream(
     let retryDelayMs = 1_000;
     while (!controller.signal.aborted) {
       try {
-        const token = await requireSimulatorAccessToken();
         if (controller.signal.aborted) return;
         const headers = new Headers({
           Accept: 'text/event-stream',
-          Authorization: `Bearer ${token}`,
           'Cache-Control': 'no-cache',
         });
         if (lastEventId) headers.set('Last-Event-ID', lastEventId);

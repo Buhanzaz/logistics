@@ -96,8 +96,8 @@ describe('contractor assignment dialog', () => {
     expect(await dialog.findByRole('alert')).toHaveTextContent('Сервис недоступен');
     await user.click(dialog.getByRole('button', { name: 'Сохранить компанию' }));
     await waitFor(() => expect(contractorApi.createCompany).toHaveBeenCalledTimes(2));
-    expect(contractorApi.createCompany.mock.calls[0]?.[3]).toEqual(contractorApi.createCompany.mock.calls[1]?.[3]);
-    expect(contractorApi.createCompany.mock.calls[1]).toEqual(['token', 'external-warehouse', {
+    expect(contractorApi.createCompany.mock.calls[0]?.[2]).toEqual(contractorApi.createCompany.mock.calls[1]?.[2]);
+    expect(contractorApi.createCompany.mock.calls[1]).toEqual(['external-warehouse', {
       name: 'Балтика', inn: '7801000001', contactName: 'Анна', phone: '+7 812 123-45-67',
       email: 'office@example.com', address: null, comment: null,
     }, expect.any(String)]);
@@ -133,7 +133,7 @@ describe('contractor assignment dialog', () => {
     await user.type(screen.getByLabelText('Имя / название'), 'Новый водитель');
     await user.type(screen.getByLabelText('Телефон'), '123');
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
-    await waitFor(() => expect(contractorApi.create).toHaveBeenCalledWith('token', 'external-warehouse', expect.objectContaining({ companyId: company.companyId }), expect.any(String)));
+    await waitFor(() => expect(contractorApi.create).toHaveBeenCalledWith('external-warehouse', expect.objectContaining({ companyId: company.companyId }), expect.any(String)));
   });
 
   it('opens company actions from the keyboard and refreshes contacts after a version conflict', async () => {
@@ -150,7 +150,7 @@ describe('contractor assignment dialog', () => {
     contractorApi.companies.mockResolvedValue([{ ...company, version: 5, name: 'Сохранённое название' }]);
     await user.click(dialog.getByRole('button', { name: 'Сохранить компанию' }));
     expect(await dialog.findByRole('alert')).toHaveTextContent('Закройте форму');
-    expect(contractorApi.updateCompany).toHaveBeenCalledWith('token', 'external-warehouse', expect.objectContaining({ version: 4 }), expect.objectContaining({ name: 'Север' }));
+    expect(contractorApi.updateCompany).toHaveBeenCalledWith('external-warehouse', expect.objectContaining({ version: 4 }), expect.objectContaining({ name: 'Север' }));
     await user.click(dialog.getByRole('button', { name: 'Отмена' }));
     await user.click(screen.getByRole('button', { name: 'Действия компании Сохранённое название' }));
     await user.click(screen.getByRole('menuitem', { name: 'Изменить компанию' }));
@@ -169,7 +169,7 @@ describe('contractor assignment dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Изменить' }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Компания' }), '');
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
-    await waitFor(() => expect(contractorApi.update).toHaveBeenCalledWith('token', 'external-warehouse', expect.objectContaining({ version: 8 }), expect.objectContaining({ companyId: null })));
+    await waitFor(() => expect(contractorApi.update).toHaveBeenCalledWith('external-warehouse', expect.objectContaining({ version: 8 }), expect.objectContaining({ companyId: null })));
   });
 
   it('shows a catalog load failure with retry and never hides it behind an empty successful state', async () => {
@@ -220,7 +220,6 @@ describe('contractor assignment dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
 
     await waitFor(() => expect(contractorApi.create).toHaveBeenCalledWith(
-      'token',
       'external-warehouse',
       expect.objectContaining({ displayName: 'Иван Петров', phone: '+7 900 000-00-00', active: true }),
       expect.any(String),
@@ -327,7 +326,6 @@ describe('contractor assignment dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Удалить' }));
     await user.click(screen.getByRole('button', { name: 'Удалить водителя' }));
     await waitFor(() => expect(contractorApi.remove).toHaveBeenCalledWith(
-      'token',
       'external-warehouse',
       expect.objectContaining({ workerId: 'contractor-active' }),
     ));
@@ -354,7 +352,6 @@ describe('contractor assignment dialog', () => {
     const copyButton = screen.getByRole('button', { name: 'Скопировать маршрут' });
     await user.click(copyButton);
     await waitFor(() => expect(contractorApi.share).toHaveBeenCalledWith(
-      'token',
       'external-warehouse',
       {
         contractorWorkerId: 'contractor-active',
@@ -482,7 +479,6 @@ describe('contractor assignment dialog', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Скопировать маршрут' }));
     await waitFor(() => expect(contractorApi.share).toHaveBeenCalledWith(
-      'token',
       'external-warehouse',
       expect.objectContaining({ externalTaskIds: ['ordered-task-1', 'ordered-task-2'] }),
       'ordered-command',

@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, setSimulatorAccessTokenProvider } from '../src/api/client';
+import { api, ApiError } from '../src/api/client';
 import { readApiResponse } from '../src/api/http-response';
 import { loadWarehouseKinds } from '../src/api/warehouse-directory';
 import { listContractorDrivers } from '../src/features/contractors/contractor-client';
 import { loadTransferDrivers } from '../src/features/transfers/transfer-client';
 
-beforeEach(() => { setSimulatorAccessTokenProvider(() => Promise.resolve('token')); });
-afterEach(() => { vi.unstubAllGlobals(); setSimulatorAccessTokenProvider(null); });
+beforeEach(() => { vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 const adapters = [
   ['planner', () => api.listWarehouses()],
   ['transfer', () => loadTransferDrivers('warehouse')],
-  ['contractor', () => listContractorDrivers('token', 'warehouse')],
+  ['contractor', () => listContractorDrivers('warehouse')],
   ['warehouse directory', () => loadWarehouseKinds()],
 ] as const;
 

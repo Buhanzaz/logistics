@@ -1,16 +1,9 @@
-import { LogIn, UserRoundCheck } from 'lucide-react';
+import { UserRoundCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { beginPanelLogin, restorePanelUser } from '../../auth/panel-oidc';
 import { Button, EmptyState, Modal, SelectField, Spinner } from '../../components/ui';
 import type { LogisticsRequest, UUID } from '../../domain/types';
 import { userFacingErrorDetail } from '../../utils/user-facing-error';
 import { listContractorDrivers, type ContractorDriver } from './contractor-client';
-
-type Session = { status: 'loading' } | { status: 'anonymous' } | { status: 'ready'; token: string };
-
-function returnTo(): string {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
 
 /** Confirms a direct task handoff without creating an internal route or vehicle cycle. */
 export function ContractorAssignmentDialog({ request, warehouseId, busy, onClose, onAssign }: {
@@ -20,7 +13,6 @@ export function ContractorAssignmentDialog({ request, warehouseId, busy, onClose
   onClose: () => void;
   onAssign: (contractorWorkerId: UUID) => Promise<void>;
 }) {
-  const [session, setSession] = useState<Session>({ status: 'loading' });
   const [contractors, setContractors] = useState<ContractorDriver[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,27 +20,15 @@ export function ContractorAssignmentDialog({ request, warehouseId, busy, onClose
 
   useEffect(() => {
     let current = true;
-    void restorePanelUser().then((user) => {
-      if (current) setSession(user ? { status: 'ready', token: user.access_token } : { status: 'anonymous' });
-    }).catch(() => { if (current) setSession({ status: 'anonymous' }); });
-    return () => { current = false; };
-  }, []);
-
-  useEffect(() => {
-    if (session.status !== 'ready') {
-      if (session.status !== 'loading') setLoading(false);
-      return;
-    }
-    let current = true;
     setLoading(true);
     setError(null);
-    void listContractorDrivers(session.token, warehouseId).then((items) => {
+    void listContractorDrivers(warehouseId).then((items) => {
       if (!current) return;
       setContractors(items);
     }).catch((caught: unknown) => { if (current) setError(userFacingErrorDetail(caught)); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [session, warehouseId]);
+  }, [warehouseId]);
 
   const active = useMemo(() => contractors.filter((contractor) => contractor.active), [contractors]);
   useEffect(() => {
@@ -59,9 +39,8 @@ export function ContractorAssignmentDialog({ request, warehouseId, busy, onClose
   const selected = active.find((contractor) => contractor.workerId === selectedId) ?? null;
   return (
     <Modal title="Передать наёмному водителю" description={`${request.name} · ${request.quantity} бытовк.`} onClose={onClose}>
-      {session.status === 'loading' || loading ? <Spinner label="Загружаем доступных подрядчиков…" /> : null}
-      {session.status === 'anonymous' ? <EmptyState title="Нужен вход в RWMS" description="Войдите, чтобы выбрать подрядчика и зафиксировать передачу." action={<Button variant="primary" onClick={() => void beginPanelLogin(returnTo())}><LogIn size={14} />Войти</Button>} /> : null}
-      {session.status === 'ready' && !loading ? (
+      {loading ? <Spinner label="Загружаем доступных подрядчиков…" /> : null}
+      {!loading ? (
         <div className="contractor-assignment">
           {error ? <div className="error-panel" role="alert"><strong>Не удалось получить список</strong><p>{error}</p></div> : null}
           {active.length ? <>
